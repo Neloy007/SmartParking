@@ -11,4 +11,6 @@ sealed class Routes(val route: String) {
     data object DriverHome : Routes("driver_home")
 
     data object OwnerHome : Routes("owner_home")
+
+    data object OwnerRegisterParking : Routes("owner_register_parking")
 }

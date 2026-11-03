@@ -10,6 +10,7 @@ import com.example.smartparking.presentation.auth.LoginScreen
 import com.example.smartparking.presentation.auth.RegisterScreen
 import com.example.smartparking.presentation.driver.DriverHomeScreen
 import com.example.smartparking.presentation.owner.OwnerHomeScreen
+import com.example.smartparking.presentation.owner.OwnerParkingRegistrationScreen
 import com.example.smartparking.presentation.splash.SplashScreen
 
 @Composable
@@ -42,7 +43,21 @@ fun AppNavigation(
         }
 
         composable(Routes.OwnerHome.route) {
-            OwnerHomeScreen()
+            OwnerHomeScreen(
+                onRegisterParking = {
+                    navController.navigate(
+                        Routes.OwnerRegisterParking.route
+                    )
+                }
+            )
+        }
+
+        composable(Routes.OwnerRegisterParking.route) {
+            OwnerParkingRegistrationScreen(
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
         }
     }
 }
