@@ -1,3 +1,16 @@
+import java.util.Properties
+
+val mapsApiKey = Properties().run {
+    val propertiesFile = rootProject.file("local.properties")
+
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use { input ->
+            load(input)
+        }
+    }
+
+    getProperty("MAPS_API_KEY", "")
+}
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -9,6 +22,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         applicationId = "com.example.smartparking"
         minSdk = 24
         targetSdk = 37
@@ -64,4 +78,13 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+    implementation("androidx.compose.material:material-icons-extended")
+
+    // Google Maps Compose
+    implementation("com.google.maps.android:maps-compose:6.4.1")
+
+    // Google Play Services Location
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 }
