@@ -10,6 +10,6 @@ data class Parking(
     val totalSlots: Int = 0,
     val availableSlots: Int = 0,
     val pricePerHour: Double = 0.0,
-    val isActive: Boolean = true,
+    val active: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 )

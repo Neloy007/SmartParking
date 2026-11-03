@@ -116,8 +116,8 @@ fun OwnerHomeScreen(
                                     )
 
                                     Text(
-                                        if (parking.isActive) "Active" else "Inactive",
-                                        color = if (parking.isActive)
+                                        if (parking.active) "Active" else "Inactive",
+                                        color = if (parking.active)
                                             MaterialTheme.colorScheme.primary
                                         else
                                             MaterialTheme.colorScheme.error

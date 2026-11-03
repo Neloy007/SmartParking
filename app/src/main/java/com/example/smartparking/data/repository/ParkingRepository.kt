@@ -20,6 +20,13 @@ class ParkingRepository {
                 createdAt = System.currentTimeMillis()
             )
 
+            android.util.Log.d("ParkingRepository", "Parking ID: ${newParking.id}")
+            android.util.Log.d("ParkingRepository", "Owner ID: ${newParking.ownerId}")
+            android.util.Log.d("ParkingRepository", "Active: ${newParking.active}")
+            android.util.Log.d("ParkingRepository", "Total slots: ${newParking.totalSlots}")
+            android.util.Log.d("ParkingRepository", "Available slots: ${newParking.availableSlots}")
+            android.util.Log.d("ParkingRepository", "Price: ${newParking.pricePerHour}")
+
             document.set(newParking).await()
 
             Result.success(newParking)

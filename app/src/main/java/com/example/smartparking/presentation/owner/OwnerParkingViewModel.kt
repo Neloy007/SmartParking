@@ -73,7 +73,7 @@ class OwnerParkingViewModel : ViewModel() {
                 totalSlots = totalSlots,
                 availableSlots = availableSlots,
                 pricePerHour = pricePerHour,
-                isActive = true
+                active = true
             )
 
             repository.addParking(parking).fold(
