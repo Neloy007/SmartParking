@@ -42,24 +42,25 @@ class ParkingRepository {
     }
 
     // Retrieve all active parking facilities
+
     suspend fun getActiveParkings(): Result<List<Parking>> {
         return try {
-            val snapshot = firestore
-                .collection("parkings")
-                .whereEqualTo("isActive", true)
+            val snapshot = firestore.collection("parkings")
+                .whereEqualTo("active", true)
                 .get()
                 .await()
 
-            val parkingList = snapshot.documents.mapNotNull {
+            val parkings = snapshot.documents.mapNotNull {
                 it.toObject(Parking::class.java)
             }
 
-            Result.success(parkingList)
+            Result.success(parkings)
 
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
 
     // Retrieve parking facilities belonging to an owner
     suspend fun getOwnerParkings(ownerId: String): Result<List<Parking>> {

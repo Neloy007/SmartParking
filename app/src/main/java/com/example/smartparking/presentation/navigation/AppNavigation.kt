@@ -1,5 +1,5 @@
-package com.example.smartparking.presentation.navigation
 
+package com.example.smartparking.presentation.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -14,9 +14,7 @@ import com.example.smartparking.presentation.owner.OwnerParkingRegistrationScree
 import com.example.smartparking.presentation.splash.SplashScreen
 
 @Composable
-fun AppNavigation(
-    modifier: Modifier = Modifier
-) {
+fun AppNavigation(modifier: Modifier = Modifier) {
 
     val navController = rememberNavController()
 
@@ -25,7 +23,6 @@ fun AppNavigation(
         startDestination = Routes.Splash.route,
         modifier = modifier
     ) {
-
         composable(Routes.Splash.route) {
             SplashScreen(navController)
         }

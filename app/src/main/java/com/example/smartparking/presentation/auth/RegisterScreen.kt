@@ -2,57 +2,35 @@
 package com.example.smartparking.presentation.auth
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.smartparking.presentation.navigation.Routes
+import kotlinx.coroutines.launch
 
-private val RegisterBackground = Color(0xFF0B1220)
-private val RegisterCard = Color(0xFF151F30)
-private val RegisterBlue = Color(0xFF3985FF)
-private val RegisterText = Color(0xFFF1F5F9)
-private val RegisterMuted = Color(0xFF94A3B8)
+private val ParkwayBlack = Color(0xFF080808)
+private val ParkwayWhite = Color(0xFFFFFFFF)
+private val ParkwayGreen = Color(0xFFB8F34A)
+private val ParkwayGray = Color(0xFF777777)
+private val ParkwayInput = Color(0xFFF4F4F4)
+private val ParkwayBorder = Color(0xFFEAEAEA)
+private val ParkwayError = Color(0xFFD32F2F)
 
 @Composable
 fun RegisterScreen(
@@ -74,11 +52,11 @@ fun RegisterScreen(
 
     LaunchedEffect(uiState.user) {
         val user = uiState.user
+
         if (user != null) {
-            val destination = if (user.role == "OWNER") {
-                Routes.OwnerHome.route
-            } else {
-                Routes.DriverHome.route
+            val destination = when (user.role.uppercase()) {
+                "OWNER" -> Routes.OwnerHome.route
+                else -> Routes.DriverHome.route
             }
 
             navController.navigate(destination) {
@@ -93,246 +71,346 @@ fun RegisterScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(RegisterBackground)
+            .background(ParkwayWhite)
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 25.dp),
+        horizontalAlignment = Alignment.Start
     ) {
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(38.dp))
 
-        // App logo
-        Surface(
-            modifier = Modifier.size(66.dp),
-            shape = CircleShape,
-            color = RegisterBlue
+        // PARKWAY BRAND
+        Row(
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            BoxContent()
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "Create Account",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = RegisterText
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Text(
-            text = "Join Smart Parking and make parking easier.",
-            color = RegisterMuted,
-            style = MaterialTheme.typography.bodyMedium
-        )
-
-        Spacer(modifier = Modifier.height(28.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = RegisterCard
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            Box(
+                modifier = Modifier
+                    .size(45.dp)
+                    .background(
+                        ParkwayBlack,
+                        RoundedCornerShape(13.dp)
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-
                 Text(
-                    text = "Personal Information",
-                    color = RegisterText,
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.titleMedium
+                    "P",
+                    color = ParkwayGreen,
+                    fontSize = 29.sp,
+                    fontWeight = FontWeight.ExtraBold
                 )
+            }
 
-                RegisterTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                        validationError = null
-                    },
-                    label = "Full name",
-                    keyboardType = KeyboardType.Text
-                )
+            Spacer(modifier = Modifier.width(11.dp))
 
-                RegisterTextField(
-                    value = email,
-                    onValueChange = {
-                        email = it
-                        validationError = null
-                    },
-                    label = "Email address",
-                    keyboardType = KeyboardType.Email
-                )
-
-                RegisterTextField(
-                    value = phone,
-                    onValueChange = {
-                        phone = it
-                        validationError = null
-                    },
-                    label = "Phone number",
-                    keyboardType = KeyboardType.Phone
+            Column {
+                Text(
+                    "parkway",
+                    color = ParkwayBlack,
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-1).sp
                 )
 
                 Text(
-                    text = "Account Type",
-                    color = RegisterText,
-                    fontWeight = FontWeight.SemiBold
+                    "SMART PARKING, SIMPLIFIED",
+                    color = ParkwayGray,
+                    fontSize = 8.sp,
+                    letterSpacing = 1.3.sp
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedRole == "DRIVER",
-                        onClick = {
-                            selectedRole = "DRIVER"
-                        },
-                        label = {
-                            Text("Driver")
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    FilterChip(
-                        selected = selectedRole == "OWNER",
-                        onClick = {
-                            selectedRole = "OWNER"
-                        },
-                        label = {
-                            Text("Parking Owner")
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Text(
-                    text = "Create Password",
-                    color = RegisterText,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                RegisterTextField(
-                    value = password,
-                    onValueChange = {
-                        password = it
-                        validationError = null
-                    },
-                    label = "Password",
-                    keyboardType = KeyboardType.Password,
-                    isPassword = true,
-                    passwordVisible = passwordVisible,
-                    onTogglePassword = {
-                        passwordVisible = !passwordVisible
-                    }
-                )
-
-                RegisterTextField(
-                    value = confirmPassword,
-                    onValueChange = {
-                        confirmPassword = it
-                        validationError = null
-                    },
-                    label = "Confirm password",
-                    keyboardType = KeyboardType.Password,
-                    isPassword = true,
-                    passwordVisible = confirmPasswordVisible,
-                    onTogglePassword = {
-                        confirmPasswordVisible = !confirmPasswordVisible
-                    }
-                )
-
-                validationError?.let {
-                    Text(
-                        text = it,
-                        color = Color(0xFFFF7777),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                uiState.error?.let {
-                    Text(
-                        text = it,
-                        color = Color(0xFFFF7777),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        val cleanName = name.trim()
-                        val cleanEmail = email.trim()
-                        val cleanPhone = phone.trim()
-
-                        validationError = when {
-                            cleanName.length < 2 ->
-                                "Please enter your full name."
-
-                            !android.util.Patterns.EMAIL_ADDRESS
-                                .matcher(cleanEmail).matches() ->
-                                "Please enter a valid email address."
-
-                            cleanPhone.count { it.isDigit() } !in 7..15 ->
-                                "Please enter a valid phone number."
-
-                            password.length < 8 ->
-                                "Password must contain at least 8 characters."
-
-                            confirmPassword != password ->
-                                "Passwords do not match."
-
-                            else -> null
-                        }
-
-                        if (validationError == null) {
-                            authViewModel.register(
-                                name = cleanName,
-                                email = cleanEmail,
-                                password = password,
-                                phone = cleanPhone,
-                                role = selectedRole
-                            )
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    enabled = !uiState.isLoading,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = RegisterBlue
-                    )
-                ) {
-                    if (uiState.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text(
-                            text = "Create Account",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(43.dp))
+
+        // HEADING
+        Text(
+            "LET'S GET YOU",
+            fontSize = 31.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = ParkwayBlack,
+            letterSpacing = (-1).sp
+        )
 
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Already have an account?",
-                color = RegisterMuted
+                "STARTED.",
+                fontSize = 31.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = ParkwayBlack,
+                letterSpacing = (-1).sp
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(11.dp)
+                    .background(
+                        ParkwayGreen,
+                        RoundedCornerShape(50)
+                    )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            "Create your Parkway account and enjoy\nsmarter, simpler parking.",
+            color = ParkwayGray,
+            fontSize = 13.sp,
+            lineHeight = 21.sp
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // PERSONAL INFORMATION
+        Text(
+            "PERSONAL INFORMATION",
+            color = ParkwayBlack,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        ParkwayRegisterField(
+            value = name,
+            onValueChange = {
+                name = it
+                validationError = null
+            },
+            label = "Full name",
+            keyboardType = KeyboardType.Text,
+            imeAction = ImeAction.Next
+        )
+
+        Spacer(modifier = Modifier.height(15.dp))
+
+        ParkwayRegisterField(
+            value = email,
+            onValueChange = {
+                email = it
+                validationError = null
+            },
+            label = "Email address",
+            keyboardType = KeyboardType.Email,
+            imeAction = ImeAction.Next
+        )
+
+        Spacer(modifier = Modifier.height(15.dp))
+
+        ParkwayRegisterField(
+            value = phone,
+            onValueChange = {
+                phone = it
+                validationError = null
+            },
+            label = "Phone number",
+            keyboardType = KeyboardType.Phone,
+            imeAction = ImeAction.Next
+        )
+
+        Spacer(modifier = Modifier.height(29.dp))
+
+        // ACCOUNT TYPE
+        Text(
+            "CHOOSE ACCOUNT TYPE",
+            color = ParkwayBlack,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp
+        )
+
+        Spacer(modifier = Modifier.height(13.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ParkwayRoleCard(
+                title = "Driver",
+                subtitle = "Find parking spaces",
+                selected = selectedRole == "DRIVER",
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    selectedRole = "DRIVER"
+                }
+            )
+
+            ParkwayRoleCard(
+                title = "Owner",
+                subtitle = "Manage parking",
+                selected = selectedRole == "OWNER",
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    selectedRole = "OWNER"
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(29.dp))
+
+        // PASSWORD
+        Text(
+            "SECURITY",
+            color = ParkwayBlack,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp
+        )
+
+        Spacer(modifier = Modifier.height(17.dp))
+
+        ParkwayRegisterField(
+            value = password,
+            onValueChange = {
+                password = it
+                validationError = null
+            },
+            label = "Create password",
+            keyboardType = KeyboardType.Password,
+            imeAction = ImeAction.Next,
+            isPassword = true,
+            passwordVisible = passwordVisible,
+            onTogglePassword = {
+                passwordVisible = !passwordVisible
+            }
+        )
+
+        Spacer(modifier = Modifier.height(15.dp))
+
+        ParkwayRegisterField(
+            value = confirmPassword,
+            onValueChange = {
+                confirmPassword = it
+                validationError = null
+            },
+            label = "Confirm password",
+            keyboardType = KeyboardType.Password,
+            imeAction = ImeAction.Done,
+            isPassword = true,
+            passwordVisible = confirmPasswordVisible,
+            onTogglePassword = {
+                confirmPasswordVisible = !confirmPasswordVisible
+            }
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            "Use at least 8 characters for your password.",
+            color = ParkwayGray,
+            fontSize = 11.sp
+        )
+
+        Spacer(modifier = Modifier.height(19.dp))
+
+        // ERRORS
+        val errorMessage = validationError ?: uiState.error
+
+        errorMessage?.let {
+            Text(
+                text = it,
+                color = ParkwayError,
+                fontSize = 12.sp
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // CREATE ACCOUNT
+        Button(
+            onClick = {
+                val cleanName = name.trim()
+                val cleanEmail = email.trim()
+                val cleanPhone = phone.trim()
+
+                val error = when {
+                    cleanName.length < 2 ->
+                        "Please enter your full name."
+
+                    !android.util.Patterns.EMAIL_ADDRESS
+                        .matcher(cleanEmail).matches() ->
+                        "Please enter a valid email address."
+
+                    cleanPhone.count { it.isDigit() } !in 7..15 ->
+                        "Please enter a valid phone number."
+
+                    password.length < 8 ->
+                        "Password must contain at least 8 characters."
+
+                    confirmPassword != password ->
+                        "Passwords do not match."
+
+                    else -> null
+                }
+
+                validationError = error
+
+                if (error == null) {
+                    authViewModel.register(
+                        name = cleanName,
+                        email = cleanEmail,
+                        password = password,
+                        phone = cleanPhone,
+                        role = selectedRole
+                    )
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(57.dp),
+            enabled = !uiState.isLoading,
+            shape = RoundedCornerShape(13.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = ParkwayBlack,
+                contentColor = ParkwayWhite,
+                disabledContainerColor = ParkwayGray
+            )
+        ) {
+            if (uiState.isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    color = ParkwayGreen,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Create Account",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Text(
+                        "→",
+                        color = ParkwayGreen,
+                        fontSize = 21.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(23.dp))
+
+        // LOGIN NAVIGATION
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Already have an account?",
+                color = ParkwayGray,
+                fontSize = 12.sp
             )
 
             TextButton(
@@ -342,55 +420,144 @@ fun RegisterScreen(
                             inclusive = true
                         }
                     }
-                }
+                },
+                contentPadding = PaddingValues(horizontal = 6.dp)
             ) {
                 Text(
-                    text = "Sign In",
-                    color = RegisterBlue,
-                    fontWeight = FontWeight.Bold
+                    "Sign In",
+                    color = ParkwayBlack,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(25.dp))
+
+        HorizontalDivider(color = ParkwayBorder)
+
+        Spacer(modifier = Modifier.height(17.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "PARKWAY",
+                color = ParkwayBlack,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 2.sp
+            )
+
+            Text(
+                "PARKING MADE SIMPLE.",
+                color = ParkwayGray,
+                fontSize = 9.sp,
+                letterSpacing = 1.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(25.dp))
     }
 }
 
 @Composable
-private fun BoxContent() {
-    androidx.compose.foundation.layout.Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+private fun ParkwayRoleCard(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(91.dp),
+        shape = RoundedCornerShape(13.dp),
+        color = if (selected) ParkwayBlack else ParkwayInput,
+        border = if (selected) null else
+            androidx.compose.foundation.BorderStroke(
+                1.dp,
+                ParkwayBorder
+            )
     ) {
-        Text(
-            text = "P",
-            color = Color.White,
-            fontWeight = FontWeight.ExtraBold,
-            style = MaterialTheme.typography.headlineLarge
-        )
+        Column(
+            modifier = Modifier.padding(13.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    title,
+                    color = if (selected) ParkwayWhite else ParkwayBlack,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                if (selected) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .background(
+                                ParkwayGreen,
+                                RoundedCornerShape(50)
+                            )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(5.dp))
+
+            Text(
+                subtitle,
+                color = if (selected) Color.LightGray else ParkwayGray,
+                fontSize = 10.sp
+            )
+        }
     }
 }
 
 @Composable
-private fun RegisterTextField(
+private fun ParkwayRegisterField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
     keyboardType: KeyboardType,
+    imeAction: ImeAction = ImeAction.Next,
     isPassword: Boolean = false,
     passwordVisible: Boolean = false,
     onTogglePassword: (() -> Unit)? = null
 ) {
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val coroutineScope = rememberCoroutineScope()
+
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth(),
-        label = {
-            Text(label)
+        modifier = Modifier
+            .fillMaxWidth()
+            .bringIntoViewRequester(bringIntoViewRequester)
+            .onFocusEvent { focusState ->
+                if (focusState.isFocused) {
+                    coroutineScope.launch {
+                        bringIntoViewRequester.bringIntoView()
+                    }
+                }
+            },
+        placeholder = {
+            Text(
+                label,
+                color = ParkwayGray,
+                fontSize = 13.sp
+            )
         },
         singleLine = true,
         keyboardOptions = KeyboardOptions(
-            keyboardType = keyboardType
+            keyboardType = keyboardType,
+            imeAction = imeAction
         ),
         visualTransformation = if (isPassword && !passwordVisible) {
             PasswordVisualTransformation()
@@ -400,24 +567,28 @@ private fun RegisterTextField(
         trailingIcon = {
             if (isPassword) {
                 TextButton(
-                    onClick = { onTogglePassword?.invoke() }
+                    onClick = {
+                        onTogglePassword?.invoke()
+                    }
                 ) {
                     Text(
-                        text = if (passwordVisible) "Hide" else "Show",
-                        color = RegisterBlue
+                        if (passwordVisible) "HIDE" else "SHOW",
+                        color = ParkwayBlack,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
         },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(13.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = RegisterText,
-            unfocusedTextColor = RegisterText,
-            focusedBorderColor = RegisterBlue,
-            unfocusedBorderColor = Color(0xFF334155),
-            focusedLabelColor = RegisterBlue,
-            unfocusedLabelColor = RegisterMuted,
-            cursorColor = RegisterBlue
+            focusedTextColor = ParkwayBlack,
+            unfocusedTextColor = ParkwayBlack,
+            focusedBorderColor = ParkwayBlack,
+            unfocusedBorderColor = Color.Transparent,
+            focusedContainerColor = ParkwayInput,
+            unfocusedContainerColor = ParkwayInput,
+            cursorColor = ParkwayBlack
         )
     )
 }
