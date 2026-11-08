@@ -13,4 +13,19 @@ sealed class Routes(val route: String) {
     data object OwnerHome : Routes("owner_home")
 
     data object OwnerRegisterParking : Routes("owner_register_parking")
+
+
+    data object DriverNavigation :
+        Routes("driver_navigation/{latitude}/{longitude}/{parkingName}") {
+
+        fun createRoute(
+            latitude: Double,
+            longitude: Double,
+            parkingName: String
+        ): String {
+            return "driver_navigation/$latitude/$longitude/" +
+                    android.net.Uri.encode(parkingName)
+        }
+    }
+
 }

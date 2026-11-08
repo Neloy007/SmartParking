@@ -1,4 +1,3 @@
-
 package com.example.smartparking.presentation.navigation
 
 import androidx.compose.runtime.Composable
@@ -6,6 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+
 import com.example.smartparking.presentation.auth.LoginScreen
 import com.example.smartparking.presentation.auth.RegisterScreen
 import com.example.smartparking.presentation.driver.DriverHomeScreen
@@ -23,6 +23,7 @@ fun AppNavigation(modifier: Modifier = Modifier) {
         startDestination = Routes.Splash.route,
         modifier = modifier
     ) {
+
         composable(Routes.Splash.route) {
             SplashScreen(navController)
         }
