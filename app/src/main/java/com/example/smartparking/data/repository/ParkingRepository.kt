@@ -103,4 +103,106 @@ class ParkingRepository {
             Result.failure(e)
         }
     }
+
+
+    suspend fun updateParking(
+        parking: Parking
+    ): Result<Unit> {
+        return try {
+            require(parking.name.isNotBlank()) {
+                "Facility name cannot be empty."
+            }
+            require(parking.address.isNotBlank()) {
+                "Address cannot be empty."
+            }
+            require(parking.totalSlots > 0) {
+                "Total slots must be greater than zero."
+            }
+            require(parking.pricePerHour >= 0 && parking.pricePerHour.isFinite()) {
+                "Enter a valid hourly price."
+            }
+
+            val parkingRef = firestore.collection("parkings")
+                .document(parking.id)
+
+            firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(parkingRef)
+
+                if (!snapshot.exists()) {
+                    throw IllegalStateException("Parking facility not found.")
+                }
+
+                val oldTotal = snapshot.getLong("totalSlots")?.toInt()
+                    ?: throw IllegalStateException("Current capacity not found.")
+
+                val oldAvailable = snapshot.getLong("availableSlots")?.toInt()
+                    ?: throw IllegalStateException("Current availability not found.")
+
+                val occupiedSlots = oldTotal - oldAvailable
+
+                if (occupiedSlots < 0) {
+                    throw IllegalStateException("Invalid parking availability data.")
+                }
+
+                if (parking.totalSlots < occupiedSlots) {
+                    throw IllegalArgumentException(
+                        "Capacity cannot be less than $occupiedSlots occupied slots."
+                    )
+                }
+
+                val newAvailable = parking.totalSlots - occupiedSlots
+
+                transaction.update(
+                    parkingRef,
+                    mapOf(
+                        "name" to parking.name.trim(),
+                        "address" to parking.address.trim(),
+                        "totalSlots" to parking.totalSlots,
+                        "availableSlots" to newAvailable,
+                        "pricePerHour" to parking.pricePerHour,
+                        "active" to parking.active
+                    )
+                )
+            }.await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteParking(
+        parkingId: String
+    ): Result<Unit> {
+        return try {
+            val parkingRef = firestore.collection("parkings")
+                .document(parkingId)
+
+            // Check for an active parking session before deletion.
+            val activeSessions = firestore.collection("parking_sessions")
+                .whereEqualTo("parkingId", parkingId)
+                .whereEqualTo("status", "CONFIRMED")
+                .get()
+                .await()
+
+            val now = System.currentTimeMillis()
+
+            val hasActiveSession = activeSessions.documents.any { session ->
+                (session.getLong("expiresAt") ?: 0L) > now
+            }
+
+            if (hasActiveSession) {
+                throw IllegalStateException(
+                    "This facility has active parking sessions and cannot be deleted yet."
+                )
+            }
+
+            parkingRef.delete().await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
 }

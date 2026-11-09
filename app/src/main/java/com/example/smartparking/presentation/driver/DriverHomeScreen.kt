@@ -36,7 +36,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 @Composable
-fun DriverHomeScreen() {
+fun DriverHomeScreen(
+    onLogout: () -> Unit
+) {
 
     val context = LocalContext.current
 
@@ -632,7 +634,18 @@ fun DriverHomeScreen() {
                     )
                 }
 
-                // SAVED AND PROFILE
+                // SAVED
+                3 -> {
+                    PlaceholderDriverTab(tab = 3)
+                }
+
+// PROFILE
+                4 -> {
+                    DriverProfileScreen(
+                        onLogout = onLogout
+                    )
+                }
+
                 else -> {
                     PlaceholderDriverTab(tab = selectedTab)
                 }

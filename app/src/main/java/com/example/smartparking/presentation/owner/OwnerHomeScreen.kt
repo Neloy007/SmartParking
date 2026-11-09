@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.Refresh
@@ -26,7 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-
+import com.example.smartparking.presentation.owner.components.OwnerLogoutButton
+import com.example.smartparking.data.model.Parking
 // ----------------------------------------------------
 // PARKWAY BRAND COLORS
 // ----------------------------------------------------
@@ -50,6 +50,8 @@ private val ParkwayRed = Color(0xFFD32F2F)
 @Composable
 fun OwnerHomeScreen(
     onRegisterParking: () -> Unit = {},
+    onEditParking: (Parking) -> Unit = {},
+    onLogout: () -> Unit,
     viewModel: OwnerParkingListViewModel = viewModel()
 ) {
 
@@ -134,35 +136,51 @@ fun OwnerHomeScreen(
             )
         },
 
-        floatingActionButton = {
 
-            ExtendedFloatingActionButton(
-                onClick = onRegisterParking,
-
-                containerColor = ParkwayBlack,
-                contentColor = ParkwayWhite,
-
-                shape = RoundedCornerShape(16.dp),
-
-                elevation = FloatingActionButtonDefaults.elevation(
-                    defaultElevation = 5.dp
-                )
+        bottomBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(ParkwayWhite)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // REGISTER PARKING
+                Button(
+                    onClick = onRegisterParking,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(54.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ParkwayBlack
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = ParkwayLime
+                    )
 
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = null,
-                    tint = ParkwayLime
-                )
+                    Spacer(Modifier.width(6.dp))
 
-                Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Register",
+                        color = ParkwayWhite,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
 
-                Text(
-                    "Register Parking",
-                    fontWeight = FontWeight.Bold
+                // LOGOUT WITH CONFIRMATION
+                OwnerLogoutButton(
+                    onLogout = onLogout,
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
+
 
     ) { padding ->
 
@@ -278,10 +296,12 @@ fun OwnerHomeScreen(
 
 
             // ----------------------------------------
-            // LOADING / ERROR / EMPTY / LIST
+            // FACILITY CONTENT
             // ----------------------------------------
 
             when {
+
+                // LOADING
 
                 uiState.isLoading -> {
 
@@ -311,6 +331,9 @@ fun OwnerHomeScreen(
                         }
                     }
                 }
+
+
+                // ERROR
 
                 uiState.error != null -> {
 
@@ -364,6 +387,9 @@ fun OwnerHomeScreen(
                         }
                     }
                 }
+
+
+                // EMPTY STATE
 
                 uiState.parkings.isEmpty() -> {
 
@@ -438,11 +464,20 @@ fun OwnerHomeScreen(
                     }
                 }
 
+
+                // PARKING FACILITIES LIST
+
                 else -> {
 
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(bottom = 100.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+
+                        contentPadding = PaddingValues(
+                            bottom = 20.dp
+                        ),
+
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
 
@@ -457,12 +492,17 @@ fun OwnerHomeScreen(
                                 availableSlots = parking.availableSlots,
                                 totalSlots = parking.totalSlots,
                                 pricePerHour = parking.pricePerHour,
-                                active = parking.active
+                                active = parking.active,
+                                onClick = {
+                                    onEditParking(parking)
+                                }
                             )
                         }
                     }
                 }
             }
+
+
         }
     }
 }
@@ -524,10 +564,12 @@ private fun OwnerParkingCard(
     availableSlots: Int,
     totalSlots: Int,
     pricePerHour: Double,
-    active: Boolean
+    active: Boolean,
+    onClick: () -> Unit
 ) {
 
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
@@ -572,6 +614,7 @@ private fun OwnerParkingCard(
                         )
                     }
                 }
+
 
                 // STATUS
 

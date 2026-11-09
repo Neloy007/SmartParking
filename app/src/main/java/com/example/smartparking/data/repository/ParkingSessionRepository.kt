@@ -48,12 +48,13 @@ class ParkingSessionRepository(
 
 
     // Confirm the initial demo payment and start a 60-minute session.
+
     suspend fun markDemoPaymentSuccessful(
         sessionId: String,
         durationMinutes: Int = 60
     ) {
-        require(durationMinutes > 0) {
-            "Duration must be greater than zero."
+        require(durationMinutes in 1..1440) {
+            "Select a valid parking duration."
         }
 
         val driverId = currentDriverId()
@@ -64,22 +65,65 @@ class ParkingSessionRepository(
             .document(sessionId)
 
         firestore.runTransaction { transaction ->
-            val snapshot = transaction.get(sessionRef)
 
-            if (snapshot.getString("driverId") != driverId) {
-                throw IllegalStateException("This session does not belong to you.")
+            // Read the session first.
+            val sessionSnapshot = transaction.get(sessionRef)
+
+            if (sessionSnapshot.getString("driverId") != driverId) {
+                throw IllegalStateException(
+                    "This session does not belong to you."
+                )
             }
 
-            if (snapshot.getString("status") != "PENDING_PAYMENT") {
-                throw IllegalStateException("This session is not awaiting payment.")
+            if (sessionSnapshot.getString("status") != "PENDING_PAYMENT") {
+                throw IllegalStateException(
+                    "This session is not awaiting payment."
+                )
             }
 
-            val hourlyRate = snapshot.getDouble("hourlyRate")
-                ?: snapshot.getLong("hourlyRate")?.toDouble()
-                ?: throw IllegalStateException("Parking rate not found.")
+            val parkingId = sessionSnapshot.getString("parkingId")
+                ?: throw IllegalStateException("Parking ID not found.")
+
+            val parkingRef = firestore
+                .collection("parkings")
+                .document(parkingId)
+
+            // Read the parking facility before writing anything.
+            val parkingSnapshot = transaction.get(parkingRef)
+
+            if (!parkingSnapshot.exists()) {
+                throw IllegalStateException("Parking facility not found.")
+            }
+
+            if (parkingSnapshot.getBoolean("active") != true) {
+                throw IllegalStateException("This parking facility is inactive.")
+            }
+
+            val availableSlots =
+                parkingSnapshot.getLong("availableSlots")?.toInt()
+                    ?: throw IllegalStateException("Availability not found.")
+
+            if (availableSlots <= 0) {
+                throw IllegalStateException("No parking slots available.")
+            }
+
+            val hourlyRate =
+                sessionSnapshot.getDouble("hourlyRate")
+                    ?: sessionSnapshot.getLong("hourlyRate")?.toDouble()
+                    ?: throw IllegalStateException("Parking rate not found.")
 
             val initialCost = hourlyRate * durationMinutes / 60.0
 
+            // Reserve one slot.
+            transaction.update(
+                parkingRef,
+                mapOf(
+                    "availableSlots" to availableSlots - 1,
+                    "lastSessionId" to sessionId
+                )
+            )
+
+            // Confirm the parking session.
             transaction.update(
                 sessionRef,
                 mapOf(
@@ -92,8 +136,10 @@ class ParkingSessionRepository(
                     "paidAt" to now
                 )
             )
+
         }.await()
     }
+
 
     // Extend an active session after demo payment confirmation.
     suspend fun extendDemoSession(
