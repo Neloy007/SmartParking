@@ -1,13 +1,12 @@
 package com.example.smartparking.presentation.driver
 
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartparking.data.model.Parking
-import com.example.smartparking.data.repository.ParkingRepository
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 
 data class DriverParkingUiState(
     val isLoading: Boolean = false,
@@ -17,28 +16,57 @@ data class DriverParkingUiState(
 
 class DriverParkingViewModel : ViewModel() {
 
-    private val repository = ParkingRepository()
+    private val firestore = FirebaseFirestore.getInstance()
 
     private val _uiState = MutableStateFlow(DriverParkingUiState())
     val uiState = _uiState.asStateFlow()
 
-    fun loadParkings() {
-        viewModelScope.launch {
-            _uiState.value = DriverParkingUiState(isLoading = true)
+    private var parkingListener: ListenerRegistration? = null
 
-            repository.getActiveParkings().fold(
-                onSuccess = { parkingList ->
-                    _uiState.value = DriverParkingUiState(
-                        parkings = parkingList
-                    )
-                },
-                onFailure = { exception ->
-                    _uiState.value = DriverParkingUiState(
-                        error = exception.message
+    fun loadParkings() {
+
+        if (parkingListener != null) return
+
+        _uiState.value = _uiState.value.copy(
+            isLoading = true,
+            error = null
+        )
+
+        parkingListener = firestore.collection("parkings")
+            .whereEqualTo("approvalStatus", "APPROVED")
+            .whereEqualTo("active", true)
+            .addSnapshotListener { snapshot, error ->
+
+                if (error != null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = error.message
                             ?: "Unable to load parking facilities."
                     )
+                    return@addSnapshotListener
                 }
-            )
-        }
+
+                val parkingList = snapshot?.documents?.mapNotNull { document ->
+                    document.toObject(Parking::class.java)
+                        ?.copy(id = document.id)
+                } ?: emptyList()
+
+                _uiState.value = DriverParkingUiState(
+                    isLoading = false,
+                    parkings = parkingList
+                )
+            }
+    }
+
+    fun refreshParkings() {
+        parkingListener?.remove()
+        parkingListener = null
+        loadParkings()
+    }
+
+    override fun onCleared() {
+        parkingListener?.remove()
+        parkingListener = null
+        super.onCleared()
     }
 }

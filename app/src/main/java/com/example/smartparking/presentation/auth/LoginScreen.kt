@@ -3,9 +3,9 @@ package com.example.smartparking.presentation.auth
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -16,7 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.*
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -31,6 +34,7 @@ private val ParkwayGray = Color(0xFF777777)
 private val ParkwayInput = Color(0xFFF4F4F4)
 private val ParkwayError = Color(0xFFD32F2F)
 
+
 @Composable
 fun LoginScreen(
     navController: NavController,
@@ -41,6 +45,7 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
 
+
     val uiState by authViewModel.uiState.collectAsState()
 
     // Keyboard visibility and automatic scrolling
@@ -48,11 +53,13 @@ fun LoginScreen(
     val passwordRequester = remember { BringIntoViewRequester() }
     val coroutineScope = rememberCoroutineScope()
 
+    // Normal Firebase user navigation
     LaunchedEffect(uiState.user) {
         uiState.user?.let { user ->
-            val destination = when (user.role.uppercase()) {
+            val destination = when (user.role.trim().uppercase()) {
                 "DRIVER" -> Routes.DriverHome.route
                 "OWNER" -> Routes.OwnerHome.route
+                "ADMIN" -> Routes.AdminDashboard.route
                 else -> Routes.Login.route
             }
 
@@ -75,7 +82,6 @@ fun LoginScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 25.dp)
     ) {
-
         Spacer(modifier = Modifier.height(65.dp))
 
         // PARKWAY BRAND
@@ -411,9 +417,7 @@ fun LoginScreen(
                 onClick = {
                     navController.navigate(Routes.Register.route)
                 },
-                contentPadding = PaddingValues(
-                    horizontal = 6.dp
-                )
+                contentPadding = PaddingValues(horizontal = 6.dp)
             ) {
                 Text(
                     "Create account",
@@ -424,12 +428,11 @@ fun LoginScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(45.dp))
+        Spacer(modifier = Modifier.height(28.dp))
+
 
         // FOOTER
-        HorizontalDivider(
-            color = Color(0xFFEEEEEE)
-        )
+        HorizontalDivider(color = Color(0xFFEEEEEE))
 
         Spacer(modifier = Modifier.height(18.dp))
 
@@ -455,4 +458,5 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(25.dp))
     }
+
 }

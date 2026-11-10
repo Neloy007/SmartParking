@@ -185,6 +185,11 @@ fun DriverHomeScreen(
 
             val matchesCategory = when (selectedCategory) {
                 "Affordable" -> parking.pricePerHour <= 50.0
+
+                "Nearby" -> currentLocation?.let {
+                    distanceInMeters(parking, it) <= 5000
+                } ?: true
+
                 else -> true
             }
 
@@ -293,7 +298,7 @@ fun DriverHomeScreen(
                         item {
                             DriverHeader(
                                 onRefresh = {
-                                    parkingViewModel.loadParkings()
+                                    parkingViewModel.refreshParkings()
                                     requestLocation()
                                 }
                             )
@@ -534,7 +539,7 @@ fun DriverHomeScreen(
 
                                     TextButton(
                                         onClick = {
-                                            parkingViewModel.loadParkings()
+                                            parkingViewModel.refreshParkings()
                                         }
                                     ) {
                                         Text("Try again")

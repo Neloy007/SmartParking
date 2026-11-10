@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartparking.presentation.owner.components.OwnerLogoutButton
 import com.example.smartparking.data.model.Parking
+import androidx.compose.material.icons.filled.AccountCircle
 // ----------------------------------------------------
 // PARKWAY BRAND COLORS
 // ----------------------------------------------------
@@ -51,7 +52,7 @@ private val ParkwayRed = Color(0xFFD32F2F)
 fun OwnerHomeScreen(
     onRegisterParking: () -> Unit = {},
     onEditParking: (Parking) -> Unit = {},
-    onLogout: () -> Unit,
+    onProfileClick: () -> Unit = {},
     viewModel: OwnerParkingListViewModel = viewModel()
 ) {
 
@@ -115,17 +116,14 @@ fun OwnerHomeScreen(
                 },
 
                 actions = {
-
                     IconButton(
-                        onClick = {
-                            viewModel.loadParkings()
-                        }
+                        onClick = onProfileClick
                     ) {
-
                         Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = ParkwayBlack
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Owner Profile",
+                            tint = ParkwayBlack,
+                            modifier = Modifier.size(30.dp)
                         )
                     }
                 },
@@ -137,21 +135,19 @@ fun OwnerHomeScreen(
         },
 
 
+
         bottomBar = {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(ParkwayWhite)
                     .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
-                // REGISTER PARKING
                 Button(
                     onClick = onRegisterParking,
                     modifier = Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
                         .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -164,22 +160,17 @@ fun OwnerHomeScreen(
                         tint = ParkwayLime
                     )
 
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(8.dp))
 
                     Text(
-                        "Register",
+                        "Register Parking",
                         color = ParkwayWhite,
                         fontWeight = FontWeight.Bold
                     )
                 }
-
-                // LOGOUT WITH CONFIRMATION
-                OwnerLogoutButton(
-                    onLogout = onLogout,
-                    modifier = Modifier.weight(1f)
-                )
             }
         }
+
 
 
     ) { padding ->

@@ -28,4 +28,8 @@ sealed class Routes(val route: String) {
         }
     }
 
+    data object OwnerProfile : Routes("owner_profile")
+
+    data object AdminDashboard : Routes("admin_dashboard")
+
 }
