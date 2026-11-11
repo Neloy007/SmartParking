@@ -21,6 +21,7 @@ import com.example.smartparking.data.model.User
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.smartparking.data.repository.AdminDashboardStats
 
 private val ParkwayBlack = Color(0xFF080808)
 private val ParkwayLime = Color(0xFFB8F34A)
@@ -55,9 +56,10 @@ fun AdminDashboardScreen(
         viewModel.startListening()
     }
 
-    LaunchedEffect(uiState.successMessage, uiState.errorMessage) {
-        if (uiState.successMessage != null || uiState.errorMessage != null) {
-            // Messages are cleared after being displayed.
+    LaunchedEffect(uiState.successMessage) {
+        if (uiState.successMessage != null && rejectingFacility != null) {
+            rejectingFacility = null
+            rejectionReason = ""
         }
     }
 
@@ -146,10 +148,7 @@ fun AdminDashboardScreen(
             when (selectedTab) {
                 AdminTab.OVERVIEW -> {
                     OverviewSection(
-                        owners = uiState.owners,
-                        drivers = uiState.drivers,
-                        facilities = uiState.facilities,
-                        bookings = uiState.bookings,
+                        stats = uiState.stats,
                         onViewApprovals = {
                             selectedTab = AdminTab.APPROVALS
                         }
@@ -281,6 +280,7 @@ fun AdminDashboardScreen(
                                     viewModel.approveFacility(facility.id)
                                 },
                                 onReject = {
+                                    viewModel.clearMessages()
                                     rejectingFacility = facility
                                     rejectionReason = ""
                                 }
@@ -291,7 +291,15 @@ fun AdminDashboardScreen(
 
                 AdminTab.FINANCE -> {
                     FinanceSection(
-                        bookings = uiState.bookings
+                        bookings = uiState.bookings,
+                        stats = uiState.stats,
+                        isActionLoading = uiState.isActionLoading,
+                        onVerifyPayment = { booking ->
+                            viewModel.verifyBookingPayment(
+                                booking.id,
+                                booking.transactionId
+                            )
+                        }
                     )
                 }
             }
@@ -342,7 +350,6 @@ fun AdminDashboardScreen(
                             facility.id,
                             rejectionReason.trim()
                         )
-                        rejectingFacility = null
                     }
                 ) {
                     Text(
@@ -492,19 +499,9 @@ private fun SectionHeading(
 
 @Composable
 private fun OverviewSection(
-    owners: List<User>,
-    drivers: List<User>,
-    facilities: List<Parking>,
-    bookings: List<Booking>,
+    stats: AdminDashboardStats,
     onViewApprovals: () -> Unit
 ) {
-    val pendingCount = facilities.count {
-        it.approvalStatus == "PENDING"
-    }
-    val approvedCount = facilities.count {
-        it.approvalStatus == "APPROVED"
-    }
-
     Text(
         "Dashboard Overview",
         fontSize = 23.sp,
@@ -526,13 +523,13 @@ private fun OverviewSection(
         SummaryCard(
             Modifier.weight(1f),
             "Owners",
-            owners.size.toString(),
+            stats.ownerCount.toString(),
             "♙"
         )
         SummaryCard(
             Modifier.weight(1f),
             "Drivers",
-            drivers.size.toString(),
+            stats.driverCount.toString(),
             "♧"
         )
     }
@@ -543,13 +540,13 @@ private fun OverviewSection(
         SummaryCard(
             Modifier.weight(1f),
             "Facilities",
-            facilities.size.toString(),
+            stats.facilityCount.toString(),
             "▦"
         )
         SummaryCard(
             Modifier.weight(1f),
             "Approved",
-            approvedCount.toString(),
+            stats.approvedFacilities.toString(),
             "✓"
         )
     }
@@ -560,13 +557,13 @@ private fun OverviewSection(
         SummaryCard(
             Modifier.weight(1f),
             "Bookings",
-            bookings.size.toString(),
+            stats.bookingCount.toString(),
             "▣"
         )
         SummaryCard(
             Modifier.weight(1f),
             "Pending review",
-            pendingCount.toString(),
+            stats.pendingFacilities.toString(),
             "!"
         )
     }
@@ -585,7 +582,7 @@ private fun OverviewSection(
     ) {
         Column(Modifier.padding(17.dp)) {
             Text(
-                "$pendingCount pending approvals",
+                "${stats.pendingFacilities} pending approvals",
                 color = ParkwayBlack,
                 fontSize = 19.sp,
                 fontWeight = FontWeight.Bold
@@ -616,15 +613,6 @@ private fun OverviewSection(
 
     Spacer(Modifier.height(20.dp))
 
-    val completedPaid = bookings.filter {
-        it.bookingStatus == "COMPLETED" &&
-                it.paymentStatus == "PAID"
-    }
-
-    val gross = completedPaid.sumOf { it.totalAmount }
-    val fee = gross * 0.025
-    val ownerEarnings = gross - fee
-
     SectionHeading(
         "Financial Snapshot",
         "Based on completed and paid bookings only."
@@ -632,7 +620,7 @@ private fun OverviewSection(
 
     FinanceMetricCard(
         "Gross booking value",
-        formatMoney(gross)
+        formatMoney(stats.totalBookingValue)
     )
 
     Spacer(Modifier.height(9.dp))
@@ -640,15 +628,24 @@ private fun OverviewSection(
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         FinanceMetricCard(
             "Parkway fee (2.5%)",
-            formatMoney(fee),
+            formatMoney(stats.totalPlatformFee),
             Modifier.weight(1f)
         )
+
         FinanceMetricCard(
             "Owner earnings",
-            formatMoney(ownerEarnings),
+            formatMoney(stats.totalOwnerEarnings),
             Modifier.weight(1f)
         )
     }
+
+    Spacer(Modifier.height(9.dp))
+
+    Text(
+        "${stats.completedBookingCount} completed and paid bookings",
+        color = ParkwayGray,
+        fontSize = 11.sp
+    )
 }
 
 @Composable
@@ -970,18 +967,24 @@ private fun SmallStatusCard(
 
 @Composable
 private fun FinanceSection(
-    bookings: List<Booking>
+    bookings: List<Booking>,
+    stats: AdminDashboardStats,
+    isActionLoading: Boolean,
+    onVerifyPayment: (Booking) -> Unit
 ) {
+    val pendingPayments = bookings
+        .filter {
+            it.paymentStatus == "PENDING" &&
+                    it.transactionId.isNotBlank()
+        }
+        .sortedByDescending { it.createdAt }
+
     val completedPaidBookings = bookings
         .filter {
             it.bookingStatus == "COMPLETED" &&
                     it.paymentStatus == "PAID"
         }
         .sortedByDescending { it.createdAt }
-
-    val gross = completedPaidBookings.sumOf { it.totalAmount }
-    val platformFee = gross * 0.025
-    val ownerEarnings = gross - platformFee
 
     Text(
         "Financial Overview",
@@ -993,7 +996,7 @@ private fun FinanceSection(
     Spacer(Modifier.height(5.dp))
 
     Text(
-        "Only completed and paid bookings are included.",
+        "Review submitted payments and monitor Parkway revenue.",
         fontSize = 12.sp,
         color = ParkwayGray
     )
@@ -1002,7 +1005,7 @@ private fun FinanceSection(
 
     FinanceMetricCard(
         "Gross booking value",
-        formatMoney(gross)
+        formatMoney(stats.totalBookingValue)
     )
 
     Spacer(Modifier.height(10.dp))
@@ -1010,12 +1013,13 @@ private fun FinanceSection(
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         FinanceMetricCard(
             "Parkway fee (2.5%)",
-            formatMoney(platformFee),
+            formatMoney(stats.totalPlatformFee),
             Modifier.weight(1f)
         )
+
         FinanceMetricCard(
             "Owner earnings",
-            formatMoney(ownerEarnings),
+            formatMoney(stats.totalOwnerEarnings),
             Modifier.weight(1f)
         )
     }
@@ -1023,13 +1027,38 @@ private fun FinanceSection(
     Spacer(Modifier.height(12.dp))
 
     Text(
-        "${completedPaidBookings.size} completed and paid bookings",
+        "${stats.completedBookingCount} completed and paid bookings",
         color = ParkwayGray,
         fontSize = 11.sp
     )
 
+    Spacer(Modifier.height(25.dp))
+
+    // PENDING PAYMENT VERIFICATION
+    SectionHeading(
+        "Pending Payment Verification",
+        "${pendingPayments.size} payments waiting for admin review"
+    )
+
+    if (pendingPayments.isEmpty()) {
+        EmptyState(
+            "No pending payments with submitted transaction IDs."
+        )
+    } else {
+        pendingPayments.forEach { booking ->
+            PendingPaymentCard(
+                booking = booking,
+                isLoading = isActionLoading,
+                onVerify = {
+                    onVerifyPayment(booking)
+                }
+            )
+        }
+    }
+
     Spacer(Modifier.height(22.dp))
 
+    // COMPLETED TRANSACTIONS
     SectionHeading(
         "Recent Transactions",
         "Completed and paid booking records."
@@ -1048,11 +1077,119 @@ private fun FinanceSection(
     Spacer(Modifier.height(12.dp))
 
     Text(
-        "Parkway's platform fee is calculated at 2.5% of each completed and paid booking. This dashboard calculation does not represent a confirmed bank transfer or payment gateway settlement.",
+        "Parkway's platform fee is calculated at 2.5% of each completed and paid booking. Payment verification records the admin's review of the submitted transaction ID; it does not independently confirm a bank transfer.",
         color = ParkwayGray,
         fontSize = 11.sp,
         lineHeight = 17.sp
     )
+}
+
+@Composable
+private fun PendingPaymentCard(
+    booking: Booking,
+    isLoading: Boolean,
+    onVerify: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 11.dp),
+        color = Color.White,
+        shape = RoundedCornerShape(15.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(15.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        booking.parkingName.ifBlank {
+                            "Parking booking"
+                        },
+                        color = ParkwayBlack,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+
+                    Text(
+                        "Booking ID: ${booking.id}",
+                        color = ParkwayGray,
+                        fontSize = 10.sp
+                    )
+                }
+
+                StatusPill(
+                    text = "PENDING",
+                    positive = false
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            DetailLine(
+                "Driver ID",
+                booking.driverId
+            )
+
+            DetailLine(
+                "Owner ID",
+                booking.ownerId
+            )
+
+            DetailLine(
+                "Payment method",
+                booking.paymentMethod
+            )
+
+            DetailLine(
+                "Transaction ID",
+                booking.transactionId
+            )
+
+            DetailLine(
+                "Amount",
+                formatMoney(booking.totalAmount)
+            )
+
+            DetailLine(
+                "Booking date",
+                formatDate(booking.createdAt)
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            Button(
+                onClick = onVerify,
+                enabled = !isLoading &&
+                        booking.transactionId.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(11.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ParkwayBlack
+                )
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(17.dp),
+                        color = ParkwayLime,
+                        strokeWidth = 2.dp
+                    )
+
+                    Spacer(Modifier.width(9.dp))
+                }
+
+                Text(
+                    "Verify Payment",
+                    color = ParkwayLime,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
 }
 
 @Composable

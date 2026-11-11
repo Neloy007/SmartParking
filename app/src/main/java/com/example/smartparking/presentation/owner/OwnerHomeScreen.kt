@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartparking.presentation.owner.components.OwnerLogoutButton
 import com.example.smartparking.data.model.Parking
 import androidx.compose.material.icons.filled.AccountCircle
+import com.example.smartparking.presentation.common.RequestLocationPermission
 // ----------------------------------------------------
 // PARKWAY BRAND COLORS
 // ----------------------------------------------------
@@ -57,6 +58,8 @@ fun OwnerHomeScreen(
 ) {
 
     val uiState by viewModel.uiState.collectAsState()
+
+    RequestLocationPermission()
 
     LaunchedEffect(Unit) {
         viewModel.loadParkings()

@@ -48,6 +48,10 @@ fun RegisterScreen(
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
 
+    val emailError = email.isNotBlank() &&
+            !android.util.Patterns.EMAIL_ADDRESS
+                .matcher(email.trim())
+                .matches()
     val uiState by authViewModel.uiState.collectAsState()
 
     LaunchedEffect(uiState.user) {
@@ -177,6 +181,7 @@ fun RegisterScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
+
         ParkwayRegisterField(
             value = name,
             onValueChange = {
@@ -187,6 +192,7 @@ fun RegisterScreen(
             keyboardType = KeyboardType.Text,
             imeAction = ImeAction.Next
         )
+
 
         Spacer(modifier = Modifier.height(15.dp))
 
@@ -520,6 +526,7 @@ private fun ParkwayRoleCard(
     }
 }
 
+
 @Composable
 private fun ParkwayRegisterField(
     value: String,
@@ -529,14 +536,19 @@ private fun ParkwayRegisterField(
     imeAction: ImeAction = ImeAction.Next,
     isPassword: Boolean = false,
     passwordVisible: Boolean = false,
-    onTogglePassword: (() -> Unit)? = null
+    onTogglePassword: (() -> Unit)? = null,
+    errorMessage: String? = null
 ) {
-    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val bringIntoViewRequester = remember {
+        BringIntoViewRequester()
+    }
+
     val coroutineScope = rememberCoroutineScope()
 
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+
         modifier = Modifier
             .fillMaxWidth()
             .bringIntoViewRequester(bringIntoViewRequester)
@@ -547,23 +559,42 @@ private fun ParkwayRegisterField(
                     }
                 }
             },
-        placeholder = {
+
+        // Floating label
+        label = {
             Text(
-                label,
-                color = ParkwayGray,
+                text = label,
                 fontSize = 13.sp
             )
         },
+
         singleLine = true,
+
+        isError = errorMessage != null,
+
+        supportingText = {
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage,
+                    color = ParkwayError,
+                    fontSize = 11.sp
+                )
+            }
+        },
+
         keyboardOptions = KeyboardOptions(
             keyboardType = keyboardType,
             imeAction = imeAction
         ),
-        visualTransformation = if (isPassword && !passwordVisible) {
+
+        visualTransformation = if (
+            isPassword && !passwordVisible
+        ) {
             PasswordVisualTransformation()
         } else {
             VisualTransformation.None
         },
+
         trailingIcon = {
             if (isPassword) {
                 TextButton(
@@ -572,7 +603,7 @@ private fun ParkwayRegisterField(
                     }
                 ) {
                     Text(
-                        if (passwordVisible) "HIDE" else "SHOW",
+                        text = if (passwordVisible) "HIDE" else "SHOW",
                         color = ParkwayBlack,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
@@ -580,14 +611,40 @@ private fun ParkwayRegisterField(
                 }
             }
         },
+
         shape = RoundedCornerShape(13.dp),
+
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = ParkwayBlack,
             unfocusedTextColor = ParkwayBlack,
-            focusedBorderColor = ParkwayBlack,
-            unfocusedBorderColor = Color.Transparent,
+
+            focusedBorderColor = if (errorMessage != null) {
+                ParkwayError
+            } else {
+                ParkwayBlack
+            },
+
+            unfocusedBorderColor = if (errorMessage != null) {
+                ParkwayError
+            } else {
+                ParkwayBorder
+            },
+
+            focusedLabelColor = if (errorMessage != null) {
+                ParkwayError
+            } else {
+                ParkwayBlack
+            },
+
+            unfocusedLabelColor = ParkwayGray,
+
+            errorBorderColor = ParkwayError,
+            errorLabelColor = ParkwayError,
+            errorSupportingTextColor = ParkwayError,
+
             focusedContainerColor = ParkwayInput,
             unfocusedContainerColor = ParkwayInput,
+
             cursorColor = ParkwayBlack
         )
     )

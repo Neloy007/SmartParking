@@ -32,5 +32,8 @@ data class Booking(
     val reservedSlots: Int = 1,
 
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+
+    val verifiedBy: String = "",
+    val verifiedAt: Long = 0L
 )

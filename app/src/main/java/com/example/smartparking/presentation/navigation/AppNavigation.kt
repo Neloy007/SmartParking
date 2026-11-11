@@ -68,7 +68,7 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                     FirebaseAuth.getInstance().signOut()
 
                     navController.navigate(Routes.Login.route) {
-                        popUpTo(Routes.DriverHome.route) {
+                        popUpTo(Routes.AdminDashboard.route) {
                             inclusive = true
                         }
                         launchSingleTop = true
@@ -158,6 +158,8 @@ fun AppNavigation(modifier: Modifier = Modifier) {
         composable(Routes.AdminDashboard.route) {
             AdminDashboardScreen(
                 onLogout = {
+                    FirebaseAuth.getInstance().signOut()
+
                     navController.navigate(Routes.Login.route) {
                         popUpTo(Routes.AdminDashboard.route) {
                             inclusive = true

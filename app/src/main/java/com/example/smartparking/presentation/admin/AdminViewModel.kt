@@ -302,9 +302,7 @@ class AdminViewModel(
         successText: String,
         action: suspend () -> Result<Unit>
     ) {
-
         viewModelScope.launch {
-
             _uiState.update {
                 it.copy(
                     isActionLoading = true,
@@ -313,12 +311,16 @@ class AdminViewModel(
                 )
             }
 
-            val result = action()
+            val result = try {
+                action()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
 
             result.fold(
-
                 onSuccess = {
-
                     _uiState.update {
                         it.copy(
                             isActionLoading = false,
@@ -326,9 +328,7 @@ class AdminViewModel(
                         )
                     }
                 },
-
                 onFailure = { error ->
-
                     _uiState.update {
                         it.copy(
                             isActionLoading = false,
@@ -367,23 +367,10 @@ class AdminViewModel(
     // ------------------------------------------------
 
     fun refresh() {
-
-        viewModelScope.launch {
-
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null
-                )
-            }
-
-            // Re-register listeners only if they have not started.
-            if (!hasStarted) {
-                startListening()
-            } else {
-                // Snapshot listeners already keep the data updated.
-                updateDashboardStats()
-            }
+        if (!hasStarted) {
+            startListening()
+        } else {
+            updateDashboardStats()
         }
     }
 

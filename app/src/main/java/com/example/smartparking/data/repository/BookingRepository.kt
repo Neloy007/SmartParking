@@ -7,6 +7,7 @@ import com.example.smartparking.data.model.User
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import kotlin.math.ceil
+import com.google.firebase.auth.FirebaseAuth
 
 class BookingRepository {
 
@@ -225,6 +226,52 @@ class BookingRepository {
             document.set(booking).await()
 
             Result.success(booking)
+
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    suspend fun cancelBooking(bookingId: String): Result<Unit> {
+        return try {
+            require(bookingId.isNotBlank()) {
+                "Booking ID is required"
+            }
+
+            val currentUserId = FirebaseAuth.getInstance()
+                .currentUser?.uid
+                ?: throw Exception("Please log in to cancel a booking.")
+
+            val bookingRef = firestore.collection("bookings")
+                .document(bookingId)
+
+            firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(bookingRef)
+
+                if (!snapshot.exists()) {
+                    throw Exception("Booking not found.")
+                }
+
+                val driverId = snapshot.getString("driverId")
+                val status = snapshot.getString("bookingStatus")
+
+                require(driverId == currentUserId) {
+                    "You are not authorized to cancel this booking."
+                }
+
+                require(status == "PENDING" || status == "CONFIRMED") {
+                    "This booking can no longer be cancelled."
+                }
+
+                transaction.update(
+                    bookingRef,
+                    mapOf(
+                        "bookingStatus" to "CANCELLED",
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                )
+            }.await()
+
+            Result.success(Unit)
 
         } catch (e: Exception) {
             Result.failure(e)

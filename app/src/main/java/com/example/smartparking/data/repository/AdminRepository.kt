@@ -1,4 +1,3 @@
-
 package com.example.smartparking.data.repository
 
 import com.example.smartparking.data.model.Booking
@@ -7,6 +6,7 @@ import com.example.smartparking.data.model.User
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 
 class AdminRepository {
@@ -29,9 +29,32 @@ class AdminRepository {
         const val PLATFORM_FEE_PERCENT = 2.5
     }
 
-    private fun requireAdminId(): String {
-        return auth.currentUser?.uid
-            ?: throw Exception("Admin is not logged in")
+    // ------------------------------------------------
+    // ADMIN AUTHENTICATION
+    // ------------------------------------------------
+
+    private suspend fun requireAdminId(): String {
+
+        val uid = auth.currentUser?.uid
+            ?: throw SecurityException("Admin is not logged in.")
+
+        val userSnapshot = firestore
+            .collection("users")
+            .document(uid)
+            .get()
+            .await()
+
+        if (!userSnapshot.exists()) {
+            throw SecurityException("Admin account not found.")
+        }
+
+        val role = userSnapshot.getString("role")
+
+        if (role != ADMIN_ROLE) {
+            throw SecurityException("Administrator access required.")
+        }
+
+        return uid
     }
 
     // ------------------------------------------------
@@ -130,7 +153,7 @@ class AdminRepository {
             val adminId = requireAdminId()
 
             require(parkingId.isNotBlank()) {
-                "Parking ID is required"
+                "Parking ID is required."
             }
 
             val parkingRef = firestore
@@ -142,13 +165,13 @@ class AdminRepository {
                 val snapshot = transaction.get(parkingRef)
 
                 require(snapshot.exists()) {
-                    "Parking facility not found"
+                    "Parking facility not found."
                 }
 
                 require(
                     snapshot.getString("approvalStatus") == PENDING
                 ) {
-                    "This facility is no longer pending"
+                    "This facility is no longer pending."
                 }
 
                 transaction.update(
@@ -166,6 +189,8 @@ class AdminRepository {
 
             Result.success(Unit)
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -185,11 +210,13 @@ class AdminRepository {
             val adminId = requireAdminId()
 
             require(parkingId.isNotBlank()) {
-                "Parking ID is required"
+                "Parking ID is required."
             }
 
-            require(reason.isNotBlank()) {
-                "Please provide a rejection reason"
+            val cleanReason = reason.trim()
+
+            require(cleanReason.isNotBlank()) {
+                "Please provide a rejection reason."
             }
 
             val parkingRef = firestore
@@ -201,13 +228,13 @@ class AdminRepository {
                 val snapshot = transaction.get(parkingRef)
 
                 require(snapshot.exists()) {
-                    "Parking facility not found"
+                    "Parking facility not found."
                 }
 
                 require(
                     snapshot.getString("approvalStatus") == PENDING
                 ) {
-                    "This facility is no longer pending"
+                    "This facility is no longer pending."
                 }
 
                 transaction.update(
@@ -217,7 +244,7 @@ class AdminRepository {
                         "active" to false,
                         "approvedAt" to null,
                         "approvedBy" to adminId,
-                        "rejectionReason" to reason
+                        "rejectionReason" to cleanReason
                     )
                 )
 
@@ -225,6 +252,8 @@ class AdminRepository {
 
             Result.success(Unit)
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -268,14 +297,16 @@ class AdminRepository {
 
         return try {
 
-            requireAdminId()
+            val adminId = requireAdminId()
 
             require(bookingId.isNotBlank()) {
-                "Booking ID is required"
+                "Booking ID is required."
             }
 
-            require(transactionId.isNotBlank()) {
-                "Transaction ID is required"
+            val cleanTransactionId = transactionId.trim()
+
+            require(cleanTransactionId.isNotBlank()) {
+                "Transaction ID is required."
             }
 
             val bookingRef = firestore
@@ -287,20 +318,22 @@ class AdminRepository {
                 val snapshot = transaction.get(bookingRef)
 
                 require(snapshot.exists()) {
-                    "Booking not found"
+                    "Booking not found."
                 }
 
                 require(
                     snapshot.getString("paymentStatus") == PENDING
                 ) {
-                    "This payment is not pending verification"
+                    "This payment is not pending verification."
                 }
 
                 transaction.update(
                     bookingRef,
                     mapOf(
                         "paymentStatus" to PAID,
-                        "transactionId" to transactionId,
+                        "transactionId" to cleanTransactionId,
+                        "verifiedBy" to adminId,
+                        "verifiedAt" to System.currentTimeMillis(),
                         "updatedAt" to System.currentTimeMillis()
                     )
                 )
@@ -309,6 +342,8 @@ class AdminRepository {
 
             Result.success(Unit)
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -320,7 +355,7 @@ class AdminRepository {
 
     fun calculatePlatformFee(amount: Double): Double {
 
-        return if (amount > 0.0) {
+        return if (amount.isFinite() && amount > 0.0) {
             amount * PLATFORM_FEE_PERCENT / 100.0
         } else {
             0.0
@@ -328,6 +363,10 @@ class AdminRepository {
     }
 
     fun calculateOwnerEarnings(amount: Double): Double {
+
+        if (!amount.isFinite() || amount <= 0.0) {
+            return 0.0
+        }
 
         return (amount - calculatePlatformFee(amount))
             .coerceAtLeast(0.0)
@@ -432,6 +471,8 @@ class AdminRepository {
 
             Result.success(stats)
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }

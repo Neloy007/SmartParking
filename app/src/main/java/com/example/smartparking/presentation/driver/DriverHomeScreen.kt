@@ -34,6 +34,10 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import androidx.activity.compose.BackHandler
+import com.example.smartparking.data.model.Booking
+import com.example.smartparking.presentation.common.RequestLocationPermission
+import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun DriverHomeScreen(
@@ -46,6 +50,7 @@ fun DriverHomeScreen(
     val uiState by parkingViewModel.uiState.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    var previousTab by remember { mutableIntStateOf(0) }
 
     var selectedParking by remember {
         mutableStateOf<Parking?>(null)
@@ -57,7 +62,7 @@ fun DriverHomeScreen(
     }
 
     var demoBookings by remember {
-        mutableStateOf<List<DemoParkingBooking>>(emptyList())
+        mutableStateOf<List<Booking>>(emptyList())
     }
 
     var activeNavigationParking by remember {
@@ -118,6 +123,9 @@ fun DriverHomeScreen(
             // Location could not be retrieved.
         }
     }
+    RequestLocationPermission { granted ->
+        hasLocationPermission = granted
+    }
 
     val locationPermissionLauncher =
         rememberLauncherForActivityResult(
@@ -170,25 +178,34 @@ fun DriverHomeScreen(
         }
     }
 
-    // Filter parking spaces
+    // Search and filter parking spaces
     val filteredParkings = remember(
         uiState.parkings,
         searchQuery,
         selectedCategory,
         currentLocation
     ) {
+        val query = searchQuery.trim()
+
         val filtered = uiState.parkings.filter { parking ->
 
-            val matchesSearch =
-                parking.name.contains(searchQuery, ignoreCase = true) ||
-                        parking.address.contains(searchQuery, ignoreCase = true)
+            // Search by parking name or address
+            val matchesSearch = query.isBlank() ||
+                    parking.name.contains(query, ignoreCase = true) ||
+                    parking.address.contains(query, ignoreCase = true)
 
+            // Explore parking filters
             val matchesCategory = when (selectedCategory) {
-                "Affordable" -> parking.pricePerHour <= 50.0
 
-                "Nearby" -> currentLocation?.let {
-                    distanceInMeters(parking, it) <= 5000
-                } ?: true
+                "Nearby" -> {
+                    currentLocation?.let { location ->
+                        distanceInMeters(parking, location) <= 5000
+                    } ?: false
+                }
+
+                "Affordable" -> {
+                    parking.pricePerHour <= 50.0
+                }
 
                 else -> true
             }
@@ -196,9 +213,10 @@ fun DriverHomeScreen(
             matchesSearch && matchesCategory
         }
 
+        // Sort by nearest parking first when location is available
         if (currentLocation != null) {
-            filtered.sortedBy {
-                distanceInMeters(it, currentLocation!!)
+            filtered.sortedBy { parking ->
+                distanceInMeters(parking, currentLocation!!)
             }
         } else {
             filtered
@@ -219,6 +237,30 @@ fun DriverHomeScreen(
         }
     }
 
+    // Handle Android system back gesture
+    BackHandler(
+        enabled = activeNavigationParking != null ||
+                bookingParking != null ||
+                selectedTab != 0
+    ) {
+        when {
+            // Navigation -> previous screen
+            activeNavigationParking != null -> {
+                activeNavigationParking = null
+            }
+
+            // Booking -> previous screen
+            bookingParking != null -> {
+                bookingParking = null
+            }
+
+            // Map or another tab -> previous tab
+            selectedTab != 0 -> {
+                selectedTab = previousTab
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -236,13 +278,32 @@ fun DriverHomeScreen(
                 onBack = {
                     bookingParking = null
                 },
-                onBookingCreated = { booking ->
+                onBookingCreated = { demoBooking ->
+
+                    val booking = Booking(
+                        id = demoBooking.id,
+                        parkingId = demoBooking.parkingId,
+                        parkingName = demoBooking.parkingName,
+                        ownerId = bookingParking?.ownerId.orEmpty(),
+                        driverId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(),
+                        startTime = demoBooking.startTime,
+                        endTime = demoBooking.endTime,
+                        pricePerHour = demoBooking.pricePerHour,
+                        durationHours = demoBooking.durationHours,
+                        totalAmount = demoBooking.totalAmount,
+                        paymentMethod = demoBooking.paymentMethod,
+                        bookingStatus = "CONFIRMED",
+                        paymentStatus = demoBooking.paymentStatus,
+                        createdAt = demoBooking.createdAt,
+                        updatedAt = System.currentTimeMillis()
+                    )
 
                     demoBookings = listOf(booking) + demoBookings
 
                     bookingParking = null
                     selectedTab = 1
                 }
+
             )
 
         }
@@ -437,6 +498,7 @@ fun DriverHomeScreen(
                                         selected = selectedCategory == "Nearby",
                                         onClick = {
                                             selectedCategory = "Nearby"
+                                            requestLocation()
                                         },
                                         label = {
                                             Text("Nearby")
@@ -574,17 +636,64 @@ fun DriverHomeScreen(
                                     Spacer(Modifier.height(12.dp))
 
                                     Text(
-                                        text = "No parking spaces found",
+                                        text = when {
+                                            selectedCategory == "Nearby" && currentLocation == null ->
+                                                "Location required"
+
+                                            selectedCategory == "Affordable" ->
+                                                "No affordable parking found"
+
+                                            searchQuery.isNotBlank() ->
+                                                "No matching parking found"
+
+                                            else ->
+                                                "No parking spaces found"
+                                        },
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
 
                                     Text(
-                                        text = "Try another search or change your filter.",
+                                        text = when {
+                                            selectedCategory == "Nearby" && currentLocation == null ->
+                                                "Please enable location access to find nearby parking."
+
+                                            selectedCategory == "Nearby" ->
+                                                "There are no parking spaces within 5 km of your location."
+
+                                            selectedCategory == "Affordable" ->
+                                                "Try another search or check all available parking spaces."
+
+                                            searchQuery.isNotBlank() ->
+                                                "Try a different parking name or address."
+
+                                            else ->
+                                                "Try another search or change your filter."
+                                        },
                                         color = Color.Gray,
                                         fontSize = 13.sp,
                                         textAlign = TextAlign.Center
                                     )
+
+                                    if (selectedCategory == "Nearby" && currentLocation == null) {
+                                        Spacer(Modifier.height(8.dp))
+
+                                        Button(
+                                            onClick = requestLocation,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFF16A34A)
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MyLocation,
+                                                contentDescription = null
+                                            )
+
+                                            Spacer(Modifier.width(8.dp))
+
+                                            Text("Enable Location")
+                                        }
+                                    }
                                 }
                             }
 
@@ -622,7 +731,21 @@ fun DriverHomeScreen(
                 // BOOKINGS
                 1 -> {
                     MyBookingsScreen(
-                        bookings = demoBookings
+                        bookings = demoBookings,
+                        onCancelBooking = { booking ->
+
+                            demoBookings = demoBookings.map { existingBooking ->
+
+                                if (existingBooking.id == booking.id) {
+                                    existingBooking.copy(
+                                        bookingStatus = "CANCELLED",
+                                        updatedAt = System.currentTimeMillis()
+                                    )
+                                } else {
+                                    existingBooking
+                                }
+                            }
+                        }
                     )
                 }
 
@@ -659,8 +782,11 @@ fun DriverHomeScreen(
             // Bottom navigation
             FloatingDriverNavigation(
                 selectedTab = selectedTab,
-                onSelect = {
-                    selectedTab = it
+                onSelect = { newTab ->
+                    if (newTab != selectedTab) {
+                        previousTab = selectedTab
+                        selectedTab = newTab
+                    }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

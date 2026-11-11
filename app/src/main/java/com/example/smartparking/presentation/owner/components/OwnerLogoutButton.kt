@@ -61,7 +61,6 @@ fun OwnerLogoutButton(
                 TextButton(
                     onClick = {
                         showDialog = false
-                        FirebaseAuth.getInstance().signOut()
                         onLogout()
                     }
                 ) {

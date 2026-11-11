@@ -159,6 +159,7 @@ class ParkingRepository {
 
 
 
+
     suspend fun updateParking(
         parking: Parking
     ): Result<Unit> {
@@ -193,9 +194,7 @@ class ParkingRepository {
             val parkingRef = firestore.collection("parkings")
                 .document(parking.id)
 
-            // Save the owner's edited values.
             firestore.runTransaction { transaction ->
-
                 val snapshot = transaction.get(parkingRef)
 
                 if (!snapshot.exists()) {
@@ -209,7 +208,8 @@ class ParkingRepository {
                         "address" to parking.address.trim(),
                         "totalSlots" to parking.totalSlots,
                         "availableSlots" to parking.availableSlots,
-                        "pricePerHour" to parking.pricePerHour
+                        "pricePerHour" to parking.pricePerHour,
+                        "active" to parking.active
                     )
                 )
             }.await()
@@ -225,6 +225,7 @@ class ParkingRepository {
             Result.failure(e)
         }
     }
+
 
 
 

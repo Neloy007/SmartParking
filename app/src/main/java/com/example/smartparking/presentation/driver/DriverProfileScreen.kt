@@ -18,6 +18,12 @@ import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 
 private val ProfileBlue = Color(0xFF155EEF)
 private val ProfileBackground = Color(0xFFF8FAFC)
@@ -29,13 +35,54 @@ fun DriverProfileScreen(
     val user = FirebaseAuth.getInstance().currentUser
     var showLogoutDialog by remember { mutableStateOf(false) }
 
-    val displayName = user?.displayName
-        ?.takeIf { it.isNotBlank() }
-        ?: "Parkway Driver"
+    val authUser = FirebaseAuth.getInstance().currentUser
+
+    var databaseName by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var isNameLoading by remember {
+        mutableStateOf(true)
+    }
+
+    LaunchedEffect(authUser?.uid) {
+        val uid = authUser?.uid
+
+        if (uid == null) {
+            isNameLoading = false
+            return@LaunchedEffect
+        }
+
+        try {
+            val document = FirebaseFirestore.getInstance()
+                .collection("users")
+                .document(uid)
+                .get()
+                .await()
+
+            databaseName = document.getString("name")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+
+        } catch (e: Exception) {
+            databaseName = null
+        } finally {
+            isNameLoading = false
+        }
+    }
+
+    val displayName = when {
+        isNameLoading -> "Loading..."
+        databaseName != null -> databaseName!!
+        else -> "Name unavailable"
+    }
+
 
     val email = user?.email ?: "Email not available"
     val phone = user?.phoneNumber ?: "Not provided"
     val uid = user?.uid ?: "Not available"
+
+
 
     Column(
         modifier = Modifier

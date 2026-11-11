@@ -31,6 +31,10 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.smartparking.presentation.navigation.Routes
 import kotlinx.coroutines.delay
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
+import kotlin.time.Duration.Companion.milliseconds
 
 private val ParkwayBlack = Color(0xFF080808)
 private val ParkwayLime = Color(0xFFB8F34A)
@@ -42,12 +46,40 @@ fun SplashScreen(
 ) {
 
     LaunchedEffect(Unit) {
-        delay(2500)
+        delay(2500.milliseconds)
 
-        navController.navigate(Routes.Login.route) {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+
+        val destination = if (currentUser == null) {
+            Routes.Login.route
+        } else {
+            try {
+                val userDocument = FirebaseFirestore.getInstance()
+                    .collection("users")
+                    .document(currentUser.uid)
+                    .get()
+                    .await()
+
+                val role = userDocument.getString("role")
+                    ?.uppercase()
+
+                when (role) {
+                    "DRIVER" -> Routes.DriverHome.route
+                    "OWNER" -> Routes.OwnerHome.route
+                    "ADMIN" -> Routes.AdminDashboard.route
+                    else -> Routes.Login.route
+                }
+            } catch (e: Exception) {
+                // Keep the Firebase session. Do not sign the user out here.
+                Routes.Login.route
+            }
+        }
+
+        navController.navigate(destination) {
             popUpTo(Routes.Splash.route) {
                 inclusive = true
             }
+            launchSingleTop = true
         }
     }
 
