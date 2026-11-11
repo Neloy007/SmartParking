@@ -33,17 +33,34 @@ fun ParkingDetailsDialog(
 
         title = {
             Column {
-                Surface(
-                    color = DriverColors.Input,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.size(48.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
+                    Surface(
+                        color = DriverColors.Input,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.LocalParking,
+                                contentDescription = null,
+                                tint = DriverColors.Black,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.LocalParking,
-                            contentDescription = null,
-                            tint = DriverColors.Black,
-                            modifier = Modifier.size(28.dp)
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close dialog",
+                            tint = DriverColors.SecondaryText
                         )
                     }
                 }
@@ -145,14 +162,6 @@ fun ParkingDetailsDialog(
             }
         },
 
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = "Close",
-                    color = DriverColors.SecondaryText
-                )
-            }
-        }
     )
 }
 
