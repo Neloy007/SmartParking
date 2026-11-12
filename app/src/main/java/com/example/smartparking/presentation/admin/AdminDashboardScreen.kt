@@ -22,6 +22,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.example.smartparking.data.repository.AdminDashboardStats
+import com.example.smartparking.data.repository.AdminParkingSession
+import com.example.smartparking.presentation.admin.componets.DemoParkingPaymentCard
 
 private val ParkwayBlack = Color(0xFF080808)
 private val ParkwayLime = Color(0xFFB8F34A)
@@ -34,8 +36,8 @@ private val ParkwayOrange = Color(0xFFFFA000)
 
 private enum class AdminTab(val label: String, val symbol: String) {
     OVERVIEW("Overview", "⌂"),
-    OWNERS("Owners", "♙"),
-    DRIVERS("Drivers", "♧"),
+    OWNERS("Drivers", "♙"),
+    DRIVERS("Owners", "♧"),
     APPROVALS("Approvals", "✓"),
     FINANCE("Finance", "৳")
 }
@@ -292,6 +294,7 @@ fun AdminDashboardScreen(
                 AdminTab.FINANCE -> {
                     FinanceSection(
                         bookings = uiState.bookings,
+                        parkingSessions = uiState.parkingSessions,
                         stats = uiState.stats,
                         isActionLoading = uiState.isActionLoading,
                         onVerifyPayment = { booking ->
@@ -968,6 +971,7 @@ private fun SmallStatusCard(
 @Composable
 private fun FinanceSection(
     bookings: List<Booking>,
+    parkingSessions: List<AdminParkingSession>,
     stats: AdminDashboardStats,
     isActionLoading: Boolean,
     onVerifyPayment: (Booking) -> Unit
@@ -985,6 +989,16 @@ private fun FinanceSection(
                     it.paymentStatus == "PAID"
         }
         .sortedByDescending { it.createdAt }
+
+    val demoPayments = parkingSessions
+        .filter {
+            it.paymentStatus == "DEMO_PAID"
+        }
+        .sortedByDescending { it.paidAt }
+
+    val totalDemoRevenue = demoPayments.sumOf {
+        it.totalPaid
+    }
 
     Text(
         "Financial Overview",
@@ -1032,9 +1046,49 @@ private fun FinanceSection(
         fontSize = 11.sp
     )
 
+    // -----------------------------------------
+    // DEMO PARKING PAYMENT SUMMARY
+    // -----------------------------------------
+
     Spacer(Modifier.height(25.dp))
 
+    SectionHeading(
+        "Demo Parking Payments",
+        "${demoPayments.size} successful demo payment sessions"
+    )
+
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FinanceMetricCard(
+            "Demo revenue",
+            formatMoney(totalDemoRevenue),
+            Modifier.weight(1f)
+        )
+
+        FinanceMetricCard(
+            "Sessions paid",
+            demoPayments.size.toString(),
+            Modifier.weight(1f)
+        )
+    }
+
+    Spacer(Modifier.height(13.dp))
+
+    if (demoPayments.isEmpty()) {
+        EmptyState(
+            "No successful demo parking payments yet. Payments will appear here after a driver completes checkout."
+        )
+    } else {
+        demoPayments.forEach { session ->
+            DemoParkingPaymentCard(session)
+        }
+    }
+
+    // -----------------------------------------
     // PENDING PAYMENT VERIFICATION
+    // -----------------------------------------
+
+    Spacer(Modifier.height(25.dp))
+
     SectionHeading(
         "Pending Payment Verification",
         "${pendingPayments.size} payments waiting for admin review"
@@ -1056,9 +1110,12 @@ private fun FinanceSection(
         }
     }
 
+    // -----------------------------------------
+    // COMPLETED BOOKING TRANSACTIONS
+    // -----------------------------------------
+
     Spacer(Modifier.height(22.dp))
 
-    // COMPLETED TRANSACTIONS
     SectionHeading(
         "Recent Transactions",
         "Completed and paid booking records."
@@ -1077,7 +1134,7 @@ private fun FinanceSection(
     Spacer(Modifier.height(12.dp))
 
     Text(
-        "Parkway's platform fee is calculated at 2.5% of each completed and paid booking. Payment verification records the admin's review of the submitted transaction ID; it does not independently confirm a bank transfer.",
+        "Parkway's platform fee is calculated at 2.5% of each completed and paid booking. Demo parking payments are displayed separately and are not included in real booking revenue.",
         color = ParkwayGray,
         fontSize = 11.sp,
         lineHeight = 17.sp
@@ -1379,4 +1436,31 @@ private fun formatDate(timestamp: Long): String {
         "dd MMM yyyy",
         Locale.getDefault()
     ).format(Date(timestamp))
+}
+
+private fun formatDateTime(timestamp: Long): String {
+    if (timestamp <= 0L) return "Not available"
+
+    return SimpleDateFormat(
+        "dd MMM yyyy, hh:mm a",
+        Locale.getDefault()
+    ).format(Date(timestamp))
+}
+
+private fun formatDuration(minutes: Int): String {
+    if (minutes <= 0) return "Not available"
+
+    val hours = minutes / 60
+    val remainingMinutes = minutes % 60
+
+    return when {
+        hours > 0 && remainingMinutes > 0 ->
+            "${hours}h ${remainingMinutes}m"
+
+        hours > 0 ->
+            "${hours}h"
+
+        else ->
+            "${remainingMinutes}m"
+    }
 }

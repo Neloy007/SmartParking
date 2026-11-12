@@ -1,14 +1,15 @@
 package com.example.smartparking.presentation.admin
 
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartparking.data.model.Booking
 import com.example.smartparking.data.model.Parking
 import com.example.smartparking.data.model.User
 import com.example.smartparking.data.repository.AdminDashboardStats
+import com.example.smartparking.data.repository.AdminParkingSession
 import com.example.smartparking.data.repository.AdminRepository
 import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,23 +17,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class AdminUiState(
-
     val owners: List<User> = emptyList(),
-
     val drivers: List<User> = emptyList(),
-
     val facilities: List<Parking> = emptyList(),
-
     val bookings: List<Booking> = emptyList(),
 
+    // Demo parking payments
+    val parkingSessions: List<AdminParkingSession> = emptyList(),
+
     val stats: AdminDashboardStats = AdminDashboardStats(),
-
     val isLoading: Boolean = true,
-
     val isActionLoading: Boolean = false,
-
     val errorMessage: String? = null,
-
     val successMessage: String? = null
 )
 
@@ -47,6 +43,7 @@ class AdminViewModel(
     private var driversListener: ListenerRegistration? = null
     private var facilitiesListener: ListenerRegistration? = null
     private var bookingsListener: ListenerRegistration? = null
+    private var parkingSessionsListener: ListenerRegistration? = null
 
     private var hasStarted = false
 
@@ -55,7 +52,6 @@ class AdminViewModel(
     // ------------------------------------------------
 
     fun startListening() {
-
         if (hasStarted) return
 
         hasStarted = true
@@ -71,6 +67,7 @@ class AdminViewModel(
         observeDrivers()
         observeFacilities()
         observeBookings()
+        observeParkingSessions()
     }
 
     // ------------------------------------------------
@@ -78,23 +75,18 @@ class AdminViewModel(
     // ------------------------------------------------
 
     private fun observeOwners() {
-
         ownersListener = repository.observeOwners { result ->
-
             result.fold(
-
                 onSuccess = { owners ->
-
                     _uiState.update {
                         it.copy(owners = owners)
                     }
-
                     updateDashboardStats()
                 },
-
                 onFailure = { error ->
-
-                    showError(error.message ?: "Unable to load owners")
+                    showError(
+                        error.message ?: "Unable to load owners"
+                    )
                 }
             )
         }
@@ -105,23 +97,18 @@ class AdminViewModel(
     // ------------------------------------------------
 
     private fun observeDrivers() {
-
         driversListener = repository.observeDrivers { result ->
-
             result.fold(
-
                 onSuccess = { drivers ->
-
                     _uiState.update {
                         it.copy(drivers = drivers)
                     }
-
                     updateDashboardStats()
                 },
-
                 onFailure = { error ->
-
-                    showError(error.message ?: "Unable to load drivers")
+                    showError(
+                        error.message ?: "Unable to load drivers"
+                    )
                 }
             )
         }
@@ -132,22 +119,15 @@ class AdminViewModel(
     // ------------------------------------------------
 
     private fun observeFacilities() {
-
         facilitiesListener = repository.observeFacilities { result ->
-
             result.fold(
-
                 onSuccess = { facilities ->
-
                     _uiState.update {
                         it.copy(facilities = facilities)
                     }
-
                     updateDashboardStats()
                 },
-
                 onFailure = { error ->
-
                     showError(
                         error.message ?: "Unable to load parking facilities"
                     )
@@ -161,26 +141,45 @@ class AdminViewModel(
     // ------------------------------------------------
 
     private fun observeBookings() {
-
         bookingsListener = repository.observeBookings { result ->
-
             result.fold(
-
                 onSuccess = { bookings ->
-
                     _uiState.update {
                         it.copy(bookings = bookings)
                     }
-
                     updateDashboardStats()
                 },
-
                 onFailure = { error ->
-
-                    showError(error.message ?: "Unable to load bookings")
+                    showError(
+                        error.message ?: "Unable to load bookings"
+                    )
                 }
             )
         }
+    }
+
+    // ------------------------------------------------
+    // DEMO PARKING SESSIONS / PAYMENTS
+    // ------------------------------------------------
+
+    private fun observeParkingSessions() {
+        parkingSessionsListener =
+            repository.observeParkingSessions { result ->
+
+                result.fold(
+                    onSuccess = { sessions ->
+                        _uiState.update {
+                            it.copy(parkingSessions = sessions)
+                        }
+                    },
+                    onFailure = { error ->
+                        showError(
+                            error.message
+                                ?: "Unable to load demo parking payments"
+                        )
+                    }
+                )
+            }
     }
 
     // ------------------------------------------------
@@ -188,7 +187,6 @@ class AdminViewModel(
     // ------------------------------------------------
 
     private fun updateDashboardStats() {
-
         val currentState = _uiState.value
 
         val completedBookings = currentState.bookings.filter {
@@ -208,11 +206,8 @@ class AdminViewModel(
         }
 
         val stats = AdminDashboardStats(
-
             ownerCount = currentState.owners.size,
-
             driverCount = currentState.drivers.size,
-
             facilityCount = currentState.facilities.size,
 
             pendingFacilities = currentState.facilities.count {
@@ -228,13 +223,9 @@ class AdminViewModel(
             },
 
             bookingCount = currentState.bookings.size,
-
             completedBookingCount = completedBookings.size,
-
             totalBookingValue = totalBookingValue,
-
             totalPlatformFee = totalPlatformFee,
-
             totalOwnerEarnings = totalOwnerEarnings
         )
 
@@ -251,7 +242,6 @@ class AdminViewModel(
     // ------------------------------------------------
 
     fun approveFacility(parkingId: String) {
-
         performAction(
             successText = "Parking facility approved successfully"
         ) {
@@ -267,7 +257,6 @@ class AdminViewModel(
         parkingId: String,
         reason: String
     ) {
-
         performAction(
             successText = "Parking facility rejected"
         ) {
@@ -276,14 +265,13 @@ class AdminViewModel(
     }
 
     // ------------------------------------------------
-    // VERIFY PAYMENT
+    // VERIFY BOOKING PAYMENT
     // ------------------------------------------------
 
     fun verifyBookingPayment(
         bookingId: String,
         transactionId: String
     ) {
-
         performAction(
             successText = "Payment marked as verified"
         ) {
@@ -313,7 +301,7 @@ class AdminViewModel(
 
             val result = try {
                 action()
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Result.failure(e)
@@ -346,14 +334,12 @@ class AdminViewModel(
     // ------------------------------------------------
 
     private fun showError(message: String) {
-
         _uiState.update {
             it.copy(errorMessage = message)
         }
     }
 
     fun clearMessages() {
-
         _uiState.update {
             it.copy(
                 errorMessage = null,
@@ -387,11 +373,11 @@ class AdminViewModel(
     // ------------------------------------------------
 
     override fun onCleared() {
-
         ownersListener?.remove()
         driversListener?.remove()
         facilitiesListener?.remove()
         bookingsListener?.remove()
+        parkingSessionsListener?.remove()
 
         super.onCleared()
     }

@@ -349,6 +349,56 @@ class AdminRepository {
         }
     }
 
+
+
+
+    fun observeParkingSessions(
+        onResult: (Result<List<AdminParkingSession>>) -> Unit
+    ): ListenerRegistration {
+
+        return firestore.collection("parking_sessions")
+            .addSnapshotListener { snapshot, error ->
+
+                if (error != null) {
+                    onResult(Result.failure(error))
+                    return@addSnapshotListener
+                }
+
+                val sessions = snapshot?.documents?.mapNotNull { document ->
+
+                    val hourlyRate =
+                        document.getDouble("hourlyRate")
+                            ?: document.getLong("hourlyRate")?.toDouble()
+                            ?: 0.0
+
+                    val totalPaid =
+                        document.getDouble("totalPaid")
+                            ?: document.getLong("totalPaid")?.toDouble()
+                            ?: 0.0
+
+                    AdminParkingSession(
+                        id = document.id,
+                        driverId = document.getString("driverId") ?: "",
+                        parkingId = document.getString("parkingId") ?: "",
+                        parkingName = document.getString("parkingName") ?: "",
+                        hourlyRate = hourlyRate,
+                        durationMinutes =
+                            document.getLong("durationMinutes")?.toInt() ?: 0,
+                        totalPaid = totalPaid,
+                        status = document.getString("status") ?: "",
+                        paymentStatus = document.getString("paymentStatus") ?: "",
+                        startedAt = document.getLong("startedAt") ?: 0L,
+                        paidAt = document.getLong("paidAt") ?: 0L,
+                        expiresAt = document.getLong("expiresAt") ?: 0L,
+                        extensionCount =
+                            document.getLong("extensionCount")?.toInt() ?: 0
+                    )
+                } ?: emptyList()
+
+                onResult(Result.success(sessions))
+            }
+    }
+
     // ------------------------------------------------
     // PLATFORM FEE CALCULATIONS
     // ------------------------------------------------
@@ -514,4 +564,21 @@ data class AdminDashboardStats(
     val totalPlatformFee: Double = 0.0,
 
     val totalOwnerEarnings: Double = 0.0
+)
+
+
+data class AdminParkingSession(
+    val id: String = "",
+    val driverId: String = "",
+    val parkingId: String = "",
+    val parkingName: String = "",
+    val hourlyRate: Double = 0.0,
+    val durationMinutes: Int = 0,
+    val totalPaid: Double = 0.0,
+    val status: String = "",
+    val paymentStatus: String = "",
+    val startedAt: Long = 0L,
+    val paidAt: Long = 0L,
+    val expiresAt: Long = 0L,
+    val extensionCount: Int = 0
 )

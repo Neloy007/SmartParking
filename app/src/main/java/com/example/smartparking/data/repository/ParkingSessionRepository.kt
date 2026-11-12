@@ -53,12 +53,8 @@ class ParkingSessionRepository(
         sessionId: String,
         durationMinutes: Int = 60
     ) {
-        require(durationMinutes in 1..1440) {
-            "Select a valid parking duration."
-        }
-
-        val driverId = currentDriverId()
-        val now = System.currentTimeMillis()
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+            ?: throw Exception("User not logged in")
 
         val sessionRef = firestore
             .collection("parking_sessions")
@@ -66,77 +62,40 @@ class ParkingSessionRepository(
 
         firestore.runTransaction { transaction ->
 
-            // Read the session first.
-            val sessionSnapshot = transaction.get(sessionRef)
+            val snapshot = transaction.get(sessionRef)
 
-            if (sessionSnapshot.getString("driverId") != driverId) {
-                throw IllegalStateException(
-                    "This session does not belong to you."
-                )
+            if (!snapshot.exists()) {
+                throw Exception("Parking session not found")
             }
 
-            if (sessionSnapshot.getString("status") != "PENDING_PAYMENT") {
-                throw IllegalStateException(
-                    "This session is not awaiting payment."
-                )
+            if (snapshot.getString("driverId") != uid) {
+                throw Exception("You cannot confirm this session")
             }
 
-            val parkingId = sessionSnapshot.getString("parkingId")
-                ?: throw IllegalStateException("Parking ID not found.")
-
-            val parkingRef = firestore
-                .collection("parkings")
-                .document(parkingId)
-
-            // Read the parking facility before writing anything.
-            val parkingSnapshot = transaction.get(parkingRef)
-
-            if (!parkingSnapshot.exists()) {
-                throw IllegalStateException("Parking facility not found.")
+            if (snapshot.getString("status") != "PENDING_PAYMENT") {
+                throw Exception("Session is not pending payment")
             }
 
-            if (parkingSnapshot.getBoolean("active") != true) {
-                throw IllegalStateException("This parking facility is inactive.")
-            }
+            val hourlyRate = snapshot.getDouble("hourlyRate") ?: 0.0
 
-            val availableSlots =
-                parkingSnapshot.getLong("availableSlots")?.toInt()
-                    ?: throw IllegalStateException("Availability not found.")
+            val paidAt = System.currentTimeMillis()
+            val expiresAt = paidAt + durationMinutes * 60_000L
+            val totalPaid = hourlyRate * durationMinutes / 60.0
 
-            if (availableSlots <= 0) {
-                throw IllegalStateException("No parking slots available.")
-            }
-
-            val hourlyRate =
-                sessionSnapshot.getDouble("hourlyRate")
-                    ?: sessionSnapshot.getLong("hourlyRate")?.toDouble()
-                    ?: throw IllegalStateException("Parking rate not found.")
-
-            val initialCost = hourlyRate * durationMinutes / 60.0
-
-            // Reserve one slot.
-            transaction.update(
-                parkingRef,
-                mapOf(
-                    "availableSlots" to availableSlots - 1,
-                    "lastSessionId" to sessionId
-                )
-            )
-
-            // Confirm the parking session.
             transaction.update(
                 sessionRef,
                 mapOf(
                     "status" to "CONFIRMED",
                     "paymentStatus" to "DEMO_PAID",
                     "durationMinutes" to durationMinutes,
-                    "expiresAt" to now + durationMinutes * 60_000L,
-                    "totalPaid" to initialCost,
+                    "expiresAt" to expiresAt,
+                    "totalPaid" to totalPaid,
                     "extensionCount" to 0,
-                    "paidAt" to now
+                    "paidAt" to paidAt
                 )
             )
 
+            null
         }.await()
     }
 
