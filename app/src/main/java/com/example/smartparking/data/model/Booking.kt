@@ -53,5 +53,7 @@ data class Booking(
 
     // Parking session created after approval
     val sessionId: String = "",
-    val sessionStartedAt: Long = 0L
+    val sessionStartedAt: Long = 0L,
+
+    val bookingType: String = "ADVANCE",
 )

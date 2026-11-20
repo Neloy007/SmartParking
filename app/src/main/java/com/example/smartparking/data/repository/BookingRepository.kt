@@ -67,14 +67,23 @@ class BookingRepository {
 
     private fun validateSchedule(
         startTime: Long,
-        endTime: Long
+        endTime: Long,
+        allowImmediate: Boolean = false
     ) {
-        require(startTime > System.currentTimeMillis()) {
-            "Booking must start in the future."
-        }
-
         require(endTime > startTime) {
             "End time must be after start time."
+        }
+
+        val now = System.currentTimeMillis()
+
+        if (allowImmediate) {
+            require(startTime >= now - 2 * 60 * 1000L) {
+                "Immediate booking has expired. Please try again."
+            }
+        } else {
+            require(startTime > now) {
+                "Booking must start in the future."
+            }
         }
     }
 
@@ -96,10 +105,15 @@ class BookingRepository {
     suspend fun checkAvailability(
         parkingId: String,
         startTime: Long,
-        endTime: Long
+        endTime: Long,
+        allowImmediate: Boolean = false
     ): Result<Int> {
         return try {
-            validateSchedule(startTime, endTime)
+            validateSchedule(
+                startTime = startTime,
+                endTime = endTime,
+                allowImmediate = allowImmediate
+            )
 
             require(parkingId.isNotBlank()) {
                 "Parking ID is required."
@@ -150,12 +164,16 @@ class BookingRepository {
         driverId: String,
         startTime: Long,
         endTime: Long,
+        allowImmediate: Boolean = false,
         transactionId: String
     ): Result<Booking> {
 
         return try {
-            validateSchedule(startTime, endTime)
-
+            validateSchedule(
+                startTime = startTime,
+                endTime = endTime,
+                allowImmediate = allowImmediate
+            )
             val currentUserId = requireCurrentUserId()
 
             require(currentUserId == driverId) {
@@ -202,7 +220,8 @@ class BookingRepository {
             val availableSlots = checkAvailability(
                 parkingId = parking.id,
                 startTime = startTime,
-                endTime = endTime
+                endTime = endTime,
+                allowImmediate = allowImmediate
             ).getOrThrow()
 
             require(availableSlots > 0) {
@@ -210,9 +229,7 @@ class BookingRepository {
             }
 
             // Retrieve owner's public bKash number.
-            val ownerBkashNumber = getOwnerBkashNumber(
-                parking.ownerId
-            ).getOrThrow()
+            val ownerBkashNumber = getOwnerBkashNumber(parking.ownerId).getOrThrow()
 
             val billableHours = calculateBillableHours(
                 startTime,
@@ -227,6 +244,20 @@ class BookingRepository {
                 .document()
 
             val now = System.currentTimeMillis()
+
+            if (endTime <= startTime) {
+                throw Exception("End time must be after start time.")
+            }
+
+            if (allowImmediate) {
+                if (startTime < now - 2 * 60 * 1000L) {
+                    throw Exception("Immediate booking has expired. Please try again.")
+                }
+            } else {
+                if (startTime <= now) {
+                    throw Exception("Booking must start in the future.")
+                }
+            }
 
             val booking = Booking(
                 id = bookingRef.id,
@@ -269,6 +300,206 @@ class BookingRepository {
             Result.failure(e)
         }
     }
+
+
+
+
+    suspend fun createParkNowBooking(
+        parking: Parking,
+        driverId: String,
+        transactionId: String
+    ): Result<Booking> {
+
+        var stage = "START"
+
+        return try {
+            // =====================================
+            // 1. INITIALIZE PARK NOW BOOKING
+            // =====================================
+
+            stage = "INITIALIZING_BOOKING"
+
+            val now = System.currentTimeMillis()
+
+            // Park Now: reserve one hour initially.
+            val startTime = now
+            val endTime = now + (60 * 60 * 1000L)
+
+            // =====================================
+            // 2. VALIDATE CURRENT USER
+            // =====================================
+
+            stage = "VALIDATING_USER"
+
+            val currentUserId = requireCurrentUserId()
+
+            require(currentUserId == driverId) {
+                "You can only create bookings for your own account."
+            }
+
+            // =====================================
+            // 3. VALIDATE PARKING INFORMATION
+            // =====================================
+
+            stage = "VALIDATING_PARKING"
+
+            require(parking.id.isNotBlank()) {
+                "Invalid parking facility."
+            }
+
+            require(parking.ownerId.isNotBlank()) {
+                "Parking owner information is missing."
+            }
+
+            require(parking.pricePerHour > 0) {
+                "Invalid parking price."
+            }
+
+            // =====================================
+            // 4. VALIDATE BKASH TRANSACTION ID
+            // =====================================
+
+            stage = "VALIDATING_TRANSACTION_ID"
+
+            require(
+                transactionId.length in 6..30 &&
+                        transactionId.all { it.isLetterOrDigit() }
+            ) {
+                "Enter a valid bKash transaction ID."
+            }
+
+            // =====================================
+            // 5. READ DRIVER PROFILE
+            // =====================================
+
+            stage = "READING_DRIVER_PROFILE"
+
+            val driverSnapshot = firestore
+                .collection("users")
+                .document(driverId)
+                .get()
+                .await()
+
+            require(driverSnapshot.exists()) {
+                "Driver profile not found."
+            }
+
+            val driverName = driverSnapshot.getString("name").orEmpty()
+            val driverPhone = driverSnapshot.getString("phone").orEmpty()
+
+            // =====================================
+            // 6. CHECK PARKING AVAILABILITY
+            // =====================================
+
+            stage = "CHECKING_PARKING_AVAILABILITY"
+
+            val availabilityResult = checkAvailability(
+                parkingId = parking.id,
+                startTime = startTime,
+                endTime = endTime
+            )
+
+            val availableSlots = availabilityResult.getOrThrow()
+
+            require(availableSlots > 0) {
+                "No parking slots are currently available."
+            }
+
+            // =====================================
+            // 7. READ OWNER BKASH NUMBER
+            // =====================================
+
+            stage = "READING_OWNER_BKASH"
+
+            val ownerBkashNumber = getOwnerBkashNumber(
+                parking.ownerId
+            ).getOrThrow()
+
+            require(ownerBkashNumber.isNotBlank()) {
+                "Owner bKash number is not configured."
+            }
+
+            // =====================================
+            // 8. CALCULATE BOOKING AMOUNT
+            // =====================================
+
+            stage = "CALCULATING_BOOKING_AMOUNT"
+
+            val billableHours = 1.0
+
+            val totalAmount = parking.pricePerHour * billableHours
+
+            require(totalAmount > 0) {
+                "Invalid booking amount."
+            }
+
+            // =====================================
+            // 9. PREPARE BOOKING DOCUMENT
+            // =====================================
+
+            stage = "PREPARING_BOOKING"
+
+            val bookingRef = firestore
+                .collection("bookings")
+                .document()
+
+            val booking = Booking(
+                id = bookingRef.id,
+                parkingId = parking.id,
+                parkingName = parking.name,
+                ownerId = parking.ownerId,
+                driverId = driverId,
+                driverName = driverName,
+                driverPhone = driverPhone,
+                startTime = startTime,
+                endTime = endTime,
+                pricePerHour = parking.pricePerHour,
+                durationHours = billableHours,
+                totalAmount = totalAmount,
+                ownerBkashNumber = ownerBkashNumber,
+                paymentMethod = "BKASH",
+                transactionId = transactionId,
+                bookingStatus = "WAITING_FOR_APPROVAL",
+                paymentStatus = "TRXID_SUBMITTED",
+                reservedSlots = 1,
+                createdAt = now,
+                updatedAt = now
+            )
+
+            // =====================================
+            // 10. SAVE BOOKING TO FIRESTORE
+            // =====================================
+
+            stage = "CREATING_BOOKING"
+
+            bookingRef.set(booking).await()
+
+            android.util.Log.d(
+                "PARK_NOW_SUCCESS",
+                "Booking created successfully: ${booking.id}"
+            )
+
+            Result.success(booking)
+
+        } catch (e: Exception) {
+
+            // =====================================
+            // 11. LOG EXACT FAILURE STAGE
+            // =====================================
+
+            android.util.Log.e(
+                "PARK_NOW_ERROR",
+                "Failed at stage: $stage | Error: ${e.message}",
+                e
+            )
+
+            Result.failure(e)
+        }
+    }
+
+
+
+
 
     // ==========================================
     // OWNER: GET PENDING PAYMENT REQUESTS

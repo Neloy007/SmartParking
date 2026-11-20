@@ -55,7 +55,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 import com.example.smartparking.data.repository.NavigationRepository
-import com.example.smartparking.data.repository.ParkingSessionRepository
 
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -93,7 +92,8 @@ fun DriverNavigationScreen(
     parkingId: String,
     hourlyRate: Double,
     hasLocationPermission: Boolean,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onParkNow: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -105,9 +105,6 @@ fun DriverNavigationScreen(
         NavigationRepository()
     }
 
-    val sessionRepository = remember {
-        ParkingSessionRepository()
-    }
 
     val scope = rememberCoroutineScope()
 
@@ -155,13 +152,7 @@ fun DriverNavigationScreen(
         mutableIntStateOf(0)
     }
 
-    var creatingSession by remember {
-        mutableStateOf(false)
-    }
 
-    var sessionId by remember {
-        mutableStateOf<String?>(null)
-    }
 
     val cameraState = rememberCameraPositionState()
 
@@ -382,233 +373,167 @@ fun DriverNavigationScreen(
         }
     }
 
-    // Show payment screen after creating a parking session.
-    val activeSessionId = sessionId
-
-    if (activeSessionId != null) {
-
-        PaymentScreen(
-            sessionId = activeSessionId,
-            parkingName = parkingName,
-            hourlyRate = hourlyRate,
-            onDone = onBack
-        )
-
-    } else {
-
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("Parkway Navigation")
-
-                            Text(
-                                text = parkingName,
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back"
-                            )
-                        }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Parkway Navigation")
+                        Text(
+                            text = parkingName,
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
-                )
-            },
-
-            bottomBar = {
-                Surface(
-                    shadowElevation = 8.dp
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-
-                        when {
-
-                            arrived -> {
-
-                                Text(
-                                    text = "You've reached your destination!",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = Color(0xFF16A34A)
-                                )
-
-                                Text(
-                                    text = "You are near $parkingName."
-                                )
-
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            creatingSession = true
-                                            error = null
-
-                                            try {
-                                                sessionId =
-                                                    sessionRepository.createPendingSession(
-                                                        parkingId = parkingId,
-                                                        parkingName = parkingName,
-                                                        hourlyRate = hourlyRate
-                                                    )
-
-                                            } catch (e: Exception) {
-                                                error = e.message
-                                                    ?: "Unable to create parking session."
-                                            } finally {
-                                                creatingSession = false
-                                            }
-                                        }
-                                    },
-                                    enabled = !creatingSession,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(54.dp)
-                                ) {
-                                    if (creatingSession) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(22.dp),
-                                            color = MaterialTheme.colorScheme.onPrimary
-                                        )
-                                    } else {
-                                        Text("Park Now")
-                                    }
-                                }
-                            }
-
-                            loading -> {
-
-                                LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-
-                                Text("Finding your route...")
-                            }
-
-                            routePoints.isNotEmpty() -> {
-
-                                Text(
-                                    text = String.format(
-                                        Locale.US,
-                                        "%.1f km route",
-                                        distance / 1000
-                                    ),
-                                    style = MaterialTheme.typography.titleLarge
-                                )
-
-                                Text(
-                                    text = "Estimated time: ${(duration / 60).toInt()} minutes"
-                                )
-                            }
-                        }
-
-                        error?.let { message ->
-
-                            Text(
-                                text = message,
-                                color = MaterialTheme.colorScheme.error
-                            )
-
-                            TextButton(
-                                onClick = {
-                                    currentLocation?.let(::loadRoute)
-                                }
-                            ) {
-                                Text("Retry")
-                            }
-                        }
-
-                        if (!arrived) {
-                            OutlinedButton(
-                                onClick = onBack,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Stop Navigation")
-                            }
-                        }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
                 }
-            }
-        ) { padding ->
+            )
+        },
+        bottomBar = {
+            Surface(shadowElevation = 8.dp) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    when {
+                        arrived -> {
+                            Text(
+                                text = "You've reached your destination!",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Color(0xFF16A34A)
+                            )
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
+                            Text("You are near $parkingName.")
 
-                if (hasLocationPermission) {
-
-                    GoogleMap(
-                        modifier = Modifier.fillMaxSize(),
-                        cameraPositionState = cameraState,
-
-                        uiSettings = MapUiSettings(
-                            myLocationButtonEnabled = true,
-                            zoomControlsEnabled = true,
-                            compassEnabled = true
-                        ),
-
-                        // Create the custom marker only after Maps loads.
-                        onMapLoaded = {
-                            if (carIcon == null) {
-                                carIcon = createCarMarkerIcon(context)
+                            Button(
+                                onClick = onParkNow,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(54.dp)
+                            ) {
+                                Text("Park Now")
                             }
                         }
-                    ) {
 
-                        Marker(
-                            state = destinationMarkerState,
-                            title = parkingName,
-                            snippet = "Parking destination"
-                        )
-
-                        if (routePoints.isNotEmpty()) {
-                            Polyline(
-                                points = routePoints,
-                                color = Color(0xFF2563EB),
-                                width = 12f
+                        loading -> {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth()
                             )
+                            Text("Finding your route...")
                         }
 
-                        if (
-                            currentLocation != null &&
-                            carIcon != null
+                        routePoints.isNotEmpty() -> {
+                            Text(
+                                text = String.format(
+                                    Locale.US,
+                                    "%.1f km route",
+                                    distance / 1000
+                                ),
+                                style = MaterialTheme.typography.titleLarge
+                            )
+
+                            Text(
+                                "Estimated time: ${(duration / 60).toInt()} minutes"
+                            )
+                        }
+                    }
+
+                    error?.let { message ->
+                        Text(
+                            text = message,
+                            color = MaterialTheme.colorScheme.error
+                        )
+
+                        TextButton(
+                            onClick = {
+                                currentLocation?.let(::loadRoute)
+                            }
                         ) {
-                            Marker(
-                                state = carMarkerState,
-                                title = "Your car",
-                                icon = carIcon!!,
-                                rotation = currentBearing,
-                                flat = true,
-                                anchor = Offset(0.5f, 0.5f)
-                            )
+                            Text("Retry")
                         }
                     }
 
-                    if (currentLocation == null) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center)
-                        )
+                    if (!arrived) {
+                        OutlinedButton(
+                            onClick = onBack,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Stop Navigation")
+                        }
                     }
-
-                } else {
-
-                    Text(
-                        text = "Location permission is required.",
-                        modifier = Modifier.align(Alignment.Center)
-                    )
                 }
             }
         }
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            if (hasLocationPermission) {
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    cameraPositionState = cameraState,
+                    uiSettings = MapUiSettings(
+                        myLocationButtonEnabled = true,
+                        zoomControlsEnabled = true,
+                        compassEnabled = true
+                    ),
+                    onMapLoaded = {
+                        if (carIcon == null) {
+                            carIcon = createCarMarkerIcon(context)
+                        }
+                    }
+                ) {
+                    Marker(
+                        state = destinationMarkerState,
+                        title = parkingName,
+                        snippet = "Parking destination"
+                    )
+
+                    if (routePoints.isNotEmpty()) {
+                        Polyline(
+                            points = routePoints,
+                            color = Color(0xFF2563EB),
+                            width = 12f
+                        )
+                    }
+
+                    if (currentLocation != null && carIcon != null) {
+                        Marker(
+                            state = carMarkerState,
+                            title = "Your car",
+                            icon = carIcon!!,
+                            rotation = currentBearing,
+                            flat = true,
+                            anchor = Offset(0.5f, 0.5f)
+                        )
+                    }
+                }
+
+                if (currentLocation == null) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            } else {
+                Text(
+                    text = "Location permission is required.",
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+        }
     }
+
+
 }
 
 /**

@@ -88,6 +88,10 @@ fun DriverHomeScreen(
         mutableStateOf<Parking?>(null)
     }
 
+    var startBookingAtPayment by remember {
+        mutableStateOf(false)
+    }
+
     // ------------------------------------------------
     // DRIVER BOOKINGS
     // ------------------------------------------------
@@ -384,21 +388,17 @@ fun DriverHomeScreen(
         // ================================================
 
         if (bookingParking != null) {
-
             BookingScreen(
                 parking = bookingParking!!,
                 driverId = currentDriverId,
-
+                startAtPayment = startBookingAtPayment,
                 onBack = {
                     bookingParking = null
+                    startBookingAtPayment = false
                 },
-
-                onBookingCreated = { _ ->
-
-                    // Firestore listener automatically receives
-                    // the newly created booking.
-
+                onBookingCreated = {
                     bookingParking = null
+                    startBookingAtPayment = false
                     selectedTab = 1
                 }
             )
@@ -421,8 +421,12 @@ fun DriverHomeScreen(
                 parkingId = destinationParking.id,
                 hourlyRate = destinationParking.pricePerHour,
                 hasLocationPermission = hasLocationPermission,
-
                 onBack = {
+                    activeNavigationParking = null
+                },
+                onParkNow = {
+                    bookingParking = destinationParking
+                    startBookingAtPayment = true
                     activeNavigationParking = null
                 }
             )

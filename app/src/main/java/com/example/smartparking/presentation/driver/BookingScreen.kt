@@ -45,7 +45,8 @@ fun BookingScreen(
     parking: Parking,
     onBack: () -> Unit,
     onBookingCreated: (Booking) -> Unit,
-    driverId: String
+    driverId: String,
+    startAtPayment: Boolean = false
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -60,11 +61,50 @@ fun BookingScreen(
         SimpleDateFormat("hh:mm a", Locale.getDefault())
     }
 
-    var step by remember { mutableStateOf(BookingStep.SCHEDULE) }
+    var step by remember(startAtPayment) {
+        mutableStateOf(
+            if (startAtPayment) {
+                BookingStep.PAYMENT
+            } else {
+                BookingStep.SCHEDULE
+            }
+        )
+    }
+    val parkNowStartTime = remember(startAtPayment) {
+        System.currentTimeMillis()
+    }
 
-    var selectedDate by remember { mutableLongStateOf(0L) }
-    var startTime by remember { mutableLongStateOf(0L) }
-    var endTime by remember { mutableLongStateOf(0L) }
+    var selectedDate by remember(startAtPayment) {
+        mutableLongStateOf(
+            if (startAtPayment) {
+                Calendar.getInstance().apply {
+                    timeInMillis = parkNowStartTime
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+            } else {
+                0L
+            }
+        )
+    }
+
+    var startTime by remember(startAtPayment) {
+        mutableLongStateOf(
+            if (startAtPayment) parkNowStartTime else 0L
+        )
+    }
+
+    var endTime by remember(startAtPayment) {
+        mutableLongStateOf(
+            if (startAtPayment) {
+                parkNowStartTime + 60 * 60 * 1000L
+            } else {
+                0L
+            }
+        )
+    }
 
     var ownerBkashNumber by remember { mutableStateOf("") }
     var isLoadingBkash by remember { mutableStateOf(true) }
@@ -187,8 +227,13 @@ fun BookingScreen(
         when (step) {
             BookingStep.SCHEDULE -> onBack()
             BookingStep.SUMMARY -> step = BookingStep.SCHEDULE
-            BookingStep.PAYMENT -> step = BookingStep.SUMMARY
-            BookingStep.WAITING -> {
+            BookingStep.PAYMENT -> {
+                if (startAtPayment) {
+                    onBack()
+                } else {
+                    step = BookingStep.SUMMARY
+                }
+            }            BookingStep.WAITING -> {
                 createdBooking?.let(onBookingCreated)
             }
         }
@@ -397,14 +442,23 @@ fun BookingScreen(
                 BookingStep.PAYMENT -> {
 
                     Text(
-                        "Pay using bKash",
+                        if (startAtPayment) {
+                            "Complete Your Parking Payment"
+                        } else {
+                            "Pay using bKash"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
 
                     InfoCard {
                         SummaryRow("Parking", parking.name)
+                        SummaryRow(
+                            "Parking duration",
+                            "$billableHours hour${if (billableHours > 1) "s" else ""}"
+                        )
                         SummaryRow("Amount to pay", money(totalAmount), true)
+
                     }
 
                     InfoCard {
@@ -428,11 +482,18 @@ fun BookingScreen(
                         }
 
                         if (isLoadingBkash) {
+
                             CircularProgressIndicator(
                                 modifier = Modifier
                                     .size(28.dp)
                                     .align(Alignment.CenterHorizontally)
                             )
+
+                            Text(
+                                "Loading owner's bKash number...",
+                                color = Color.Gray
+                            )
+
                         } else if (ownerBkashNumber.isNotBlank()) {
 
                             Text(
@@ -463,9 +524,21 @@ fun BookingScreen(
                                 Spacer(Modifier.width(8.dp))
 
                                 Text(
-                                    if (copiedNumber) "Number copied" else "Copy bKash number"
+                                    if (copiedNumber) {
+                                        "Number copied"
+                                    } else {
+                                        "Copy bKash number"
+                                    }
                                 )
                             }
+
+                        } else {
+
+                            Text(
+                                errorMessage ?: "Owner's bKash number is unavailable.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
                     }
 
@@ -544,7 +617,8 @@ fun BookingScreen(
                                     driverId = driverId,
                                     startTime = startTime,
                                     endTime = endTime,
-                                    transactionId = cleanTrxId
+                                    transactionId = cleanTrxId,
+                                    allowImmediate = startAtPayment
                                 )
 
                                 createdBooking = result.getOrThrow()

@@ -1,3 +1,4 @@
+
 package com.example.smartparking.presentation.navigation
 
 sealed class Routes(val route: String) {
@@ -14,7 +15,6 @@ sealed class Routes(val route: String) {
 
     data object OwnerRegisterParking : Routes("owner_register_parking")
 
-
     data object DriverNavigation :
         Routes("driver_navigation/{latitude}/{longitude}/{parkingName}") {
 
@@ -28,8 +28,20 @@ sealed class Routes(val route: String) {
         }
     }
 
+    // BOOKING PAYMENT
+    data object ConfirmPayment :
+        Routes("confirm_payment/{parkingId}/{startTime}/{endTime}") {
+
+        fun createRoute(
+            parkingId: String,
+            startTime: Long,
+            endTime: Long
+        ): String {
+            return "confirm_payment/${android.net.Uri.encode(parkingId)}/$startTime/$endTime"
+        }
+    }
+
     data object OwnerProfile : Routes("owner_profile")
 
     data object AdminDashboard : Routes("admin_dashboard")
-
 }
