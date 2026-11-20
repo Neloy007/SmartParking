@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material.icons.filled.Notifications
 import com.example.smartparking.presentation.owner.components.OwnerLogoutButton
 import com.example.smartparking.data.model.Parking
 import androidx.compose.material.icons.filled.AccountCircle
@@ -54,6 +55,7 @@ fun OwnerHomeScreen(
     onRegisterParking: () -> Unit = {},
     onEditParking: (Parking) -> Unit = {},
     onProfileClick: () -> Unit = {},
+    onBookingRequests: () -> Unit = {},
     viewModel: OwnerParkingListViewModel = viewModel()
 ) {
 
@@ -119,6 +121,20 @@ fun OwnerHomeScreen(
                 },
 
                 actions = {
+
+                    // BOOKING REQUESTS
+                    IconButton(
+                        onClick = onBookingRequests
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "Booking Requests",
+                            tint = ParkwayBlack,
+                            modifier = Modifier.size(27.dp)
+                        )
+                    }
+
+                    // OWNER PROFILE
                     IconButton(
                         onClick = onProfileClick
                     ) {

@@ -9,11 +9,15 @@ import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
@@ -29,6 +33,8 @@ import com.example.smartparking.presentation.owner.OwnerParkingEditScreen
 import com.example.smartparking.presentation.owner.OwnerProfileScreen
 import com.example.smartparking.presentation.splash.SplashScreen
 import com.google.firebase.auth.FirebaseAuth
+import com.example.smartparking.presentation.owner.OwnerBookingApprovalScreen
+import com.example.smartparking.presentation.owner.OwnerBookingViewModel
 
 private val ParkwayBlack = Color(0xFF080808)
 private val ParkwayLime = Color(0xFFB8F34A)
@@ -81,19 +87,16 @@ fun AppNavigation(modifier: Modifier = Modifier) {
         composable(Routes.OwnerHome.route) {
             OwnerHomeScreen(
                 onRegisterParking = {
-                    navController.navigate(
-                        Routes.OwnerRegisterParking.route
-                    )
+                    navController.navigate(Routes.OwnerRegisterParking.route)
                 },
                 onEditParking = { parking ->
-                    navController.navigate(
-                        "owner/editParking/${parking.id}"
-                    )
+                    navController.navigate("owner/editParking/${parking.id}")
                 },
                 onProfileClick = {
-                    navController.navigate(
-                        Routes.OwnerProfile.route
-                    )
+                    navController.navigate(Routes.OwnerProfile.route)
+                },
+                onBookingRequests = {
+                    navController.navigate("owner/booking-approvals")
                 }
             )
         }
@@ -153,6 +156,38 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                 }
             )
         }
+
+        // OWNER BOOKING APPROVALS
+
+        composable("owner/booking-approvals") {
+
+            val viewModel: OwnerBookingViewModel = viewModel()
+
+            val uiState by viewModel.uiState.collectAsState()
+
+            OwnerBookingApprovalScreen(
+                bookings = uiState.bookings,
+                isLoading = uiState.isLoading,
+                errorMessage = uiState.errorMessage,
+                processingBookingId = uiState.processingBookingId,
+
+                onApprove = { booking ->
+                    viewModel.approveBooking(booking.id)
+                },
+
+                onReject = { booking ->
+                    viewModel.rejectBooking(
+                        bookingId = booking.id,
+                        reason = "Payment could not be verified."
+                    )
+                },
+
+                onRefresh = {
+                    viewModel.refreshBookings()
+                }
+            )
+        }
+
 
         // ADMIN DASHBOARD - DEMO ONLY
         composable(Routes.AdminDashboard.route) {

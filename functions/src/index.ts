@@ -272,3 +272,157 @@ export const createBooking = onCall(
     }
   }
 );
+
+
+// ==========================================
+// CHECK PARKING AVAILABILITY
+// ==========================================
+
+interface CheckAvailabilityRequest {
+  parkingId: string;
+  startTime: number;
+  endTime: number;
+}
+
+export const checkParkingAvailability = onCall(
+  async (request) => {
+    // Require authentication.
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Please log in first."
+      );
+    }
+
+    const driverId = request.auth.uid;
+    const data = request.data as CheckAvailabilityRequest;
+
+    const {parkingId, startTime, endTime} = data || {};
+
+    // Validate request.
+    if (
+      typeof parkingId !== "string" ||
+      parkingId.trim() === "" ||
+      !Number.isSafeInteger(startTime) ||
+      !Number.isSafeInteger(endTime)
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Invalid parking ID or booking schedule."
+      );
+    }
+
+    if (
+      startTime <= Date.now() ||
+      endTime <= startTime
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Please select a valid future booking schedule."
+      );
+    }
+
+    try {
+      // Verify driver role.
+      const driverSnapshot = await db
+        .collection("users")
+        .doc(driverId)
+        .get();
+
+      if (
+        !driverSnapshot.exists ||
+        driverSnapshot.get("role") !== "DRIVER"
+      ) {
+        throw new HttpsError(
+          "permission-denied",
+          "Only drivers can check parking availability."
+        );
+      }
+
+      // Get parking facility.
+      const parkingSnapshot = await db
+        .collection("parkings")
+        .doc(parkingId)
+        .get();
+
+      if (!parkingSnapshot.exists) {
+        throw new HttpsError(
+          "not-found",
+          "Parking facility not found."
+        );
+      }
+
+      const parking = parkingSnapshot.data()!;
+
+      if (parking.active !== true) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This parking facility is not active."
+        );
+      }
+
+      const totalSlots = Number(parking.totalSlots);
+
+      if (
+        !Number.isInteger(totalSlots) ||
+        totalSlots <= 0
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Invalid parking capacity."
+        );
+      }
+
+      // Admin SDK can read all bookings.
+      const bookingsSnapshot = await db
+        .collection("bookings")
+        .where("parkingId", "==", parkingId)
+        .get();
+
+      let occupiedSlots = 0;
+
+      bookingsSnapshot.forEach((document) => {
+        const booking = document.data();
+
+        const activeBooking =
+          booking.bookingStatus === "PENDING" ||
+          booking.bookingStatus === "WAITING_FOR_APPROVAL" ||
+          booking.bookingStatus === "CONFIRMED";
+
+        const overlaps =
+          startTime < Number(booking.endTime) &&
+          endTime > Number(booking.startTime);
+
+        if (activeBooking && overlaps) {
+          occupiedSlots +=
+            Number(booking.reservedSlots) || 1;
+        }
+      });
+
+      const availableSlots = Math.max(
+        totalSlots - occupiedSlots,
+        0
+      );
+
+      return {
+        success: true,
+        availableSlots,
+      };
+    } catch (error) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      console.error(
+        "Availability check failed:",
+        error
+      );
+
+      throw new HttpsError(
+        "internal",
+        "Unable to check parking availability."
+      );
+    }
+  }
+);
+

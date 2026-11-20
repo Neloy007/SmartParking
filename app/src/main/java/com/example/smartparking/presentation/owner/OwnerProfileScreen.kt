@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+
 private val ParkwayBlack = Color(0xFF080808)
 private val ParkwayLime = Color(0xFFB8F34A)
 private val ParkwayGray = Color(0xFF777777)
@@ -36,9 +38,14 @@ fun OwnerProfileScreen(
     viewModel: OwnerProfileViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState
+    var bkashNumber by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.loadProfile()
+    }
+
+    LaunchedEffect(uiState.user?.bkashNumber) {
+        bkashNumber = uiState.user?.bkashNumber.orEmpty()
     }
 
     Scaffold(
@@ -80,7 +87,7 @@ fun OwnerProfileScreen(
                 }
             }
 
-            uiState.error != null -> {
+            uiState.error != null && uiState.user == null -> {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -118,9 +125,9 @@ fun OwnerProfileScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+
                     Spacer(Modifier.height(24.dp))
 
-                    // Profile avatar
                     Box(
                         modifier = Modifier
                             .size(116.dp)
@@ -169,11 +176,10 @@ fun OwnerProfileScreen(
 
                     Spacer(Modifier.height(30.dp))
 
-                    // Email
                     ProfileInfoCard(
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.Email,
+                                Icons.Default.Email,
                                 contentDescription = null,
                                 tint = ParkwayBlack
                             )
@@ -184,26 +190,24 @@ fun OwnerProfileScreen(
 
                     Spacer(Modifier.height(13.dp))
 
-                    // Phone
                     ProfileInfoCard(
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.Phone,
+                                Icons.Default.Phone,
                                 contentDescription = null,
                                 tint = ParkwayBlack
                             )
                         },
-                        title = "Phone number",
+                        title = "Personal phone number",
                         value = user.phone.ifBlank { "Not provided" }
                     )
 
                     Spacer(Modifier.height(13.dp))
 
-                    // Role
                     ProfileInfoCard(
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.AccountCircle,
+                                Icons.Default.AccountCircle,
                                 contentDescription = null,
                                 tint = ParkwayBlack
                             )
@@ -214,11 +218,10 @@ fun OwnerProfileScreen(
 
                     Spacer(Modifier.height(13.dp))
 
-                    // Verification status
                     ProfileInfoCard(
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.AccountCircle,
+                                Icons.Default.AccountCircle,
                                 contentDescription = null,
                                 tint = ParkwayBlack
                             )
@@ -231,9 +234,111 @@ fun OwnerProfileScreen(
                         }
                     )
 
+                    Spacer(Modifier.height(28.dp))
+
+                    // BKASH PAYMENT SETTINGS
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Payment Settings",
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = ParkwayBlack
+                        )
+
+                        Spacer(Modifier.height(6.dp))
+
+                        Text(
+                            text = "Add your bKash number so drivers can pay for parking bookings.",
+                            fontSize = 12.sp,
+                            color = ParkwayGray
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = bkashNumber,
+                            onValueChange = {
+                                if (it.length <= 11 && it.all(Char::isDigit)) {
+                                    bkashNumber = it
+                                    viewModel.clearMessages()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("bKash account number") },
+                            placeholder = { Text("01XXXXXXXXX") },
+                            leadingIcon = {
+                                Text(
+                                    text = "৳",
+                                    modifier = Modifier.padding(start = 12.dp),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp
+                                )
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = ParkwayBlack,
+                                unfocusedBorderColor = Color.LightGray,
+                                focusedLabelColor = ParkwayBlack,
+                                cursorColor = ParkwayBlack
+                            )
+                        )
+
+                        Spacer(Modifier.height(14.dp))
+
+                        Button(
+                            onClick = {
+                                viewModel.updateBkashNumber(bkashNumber)
+                            },
+                            enabled = !uiState.isSaving,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = ParkwayBlack
+                            )
+                        ) {
+                            if (uiState.isSaving) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = ParkwayLime,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text(
+                                    text = "Save bKash Number",
+                                    color = ParkwayLime,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        uiState.successMessage?.let {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = it,
+                                color = Color(0xFF228B22),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        uiState.error?.let {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = it,
+                                color = Color.Red,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+
                     Spacer(Modifier.height(32.dp))
 
-                    // Logout button
                     Button(
                         onClick = onLogout,
                         modifier = Modifier

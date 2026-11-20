@@ -1,87 +1,98 @@
-package com.example.smartparking.data.repository
 
+package com.example.smartparking.data.repository
 
 import com.example.smartparking.data.model.Booking
 import com.example.smartparking.data.model.Parking
-import com.example.smartparking.data.model.User
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import kotlin.math.ceil
-import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.ListenerRegistration
 
 class BookingRepository {
 
     private val firestore = FirebaseFirestore.getInstance()
 
-    /**
-     * Retrieve the owner's bKash number from Firestore.
-     */
-    suspend fun getOwnerPhone(ownerId: String): Result<String> {
+    private val auth = FirebaseAuth.getInstance()
+
+    // ==========================================
+    // CURRENT USER
+    // ==========================================
+
+    private fun requireCurrentUserId(): String {
+        return auth.currentUser?.uid
+            ?: throw Exception("Please log in first.")
+    }
+
+    // ==========================================
+    // OWNER BKASH NUMBER
+    // ==========================================
+
+    suspend fun getOwnerBkashNumber(
+        ownerId: String
+    ): Result<String> {
         return try {
             require(ownerId.isNotBlank()) {
-                "Owner ID is required"
+                "Owner ID is required."
             }
 
             val snapshot = firestore
-                .collection("users")
+                .collection("owner_payment_profiles")
                 .document(ownerId)
                 .get()
                 .await()
 
-            val owner = snapshot.toObject(User::class.java)
-                ?: throw Exception("Owner account not found")
-
-            require(owner.role == "OWNER") {
-                "Invalid parking owner"
+            require(snapshot.exists()) {
+                "The parking owner has not configured a bKash number yet."
             }
 
-            require(owner.phone.isNotBlank()) {
-                "Owner has not added a phone number"
+            val number = snapshot.getString("bkashNumber")
+                ?.trim()
+                .orEmpty()
+
+            require(number.matches(Regex("^01[3-9][0-9]{8}$"))) {
+                "The owner's bKash number is invalid."
             }
 
-            Result.success(owner.phone)
+            Result.success(number)
 
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    /**
-     * Validate a requested booking schedule.
-     */
+    // ==========================================
+    // VALIDATION
+    // ==========================================
+
     private fun validateSchedule(
         startTime: Long,
         endTime: Long
     ) {
         require(startTime > System.currentTimeMillis()) {
-            "Booking must start in the future"
+            "Booking must start in the future."
         }
 
         require(endTime > startTime) {
-            "End time must be after start time"
+            "End time must be after start time."
         }
     }
 
-    /**
-     * Calculate billable hours.
-     * Partial hours are rounded up.
-     *
-     * Example:
-     * 10:00 AM - 11:30 AM = 2 billable hours.
-     */
     private fun calculateBillableHours(
         startTime: Long,
         endTime: Long
     ): Double {
-        val durationMillis = endTime - startTime
-        val actualHours = durationMillis / 3_600_000.0
-
-        return ceil(actualHours)
+        return ceil(
+            (endTime - startTime) / 3_600_000.0
+        )
     }
 
-    /**
-     * Check availability for a custom time range.
-     */
+    // ==========================================
+    // CHECK PARKING AVAILABILITY
+    // ==========================================
+
+
+
     suspend fun checkAvailability(
         parkingId: String,
         startTime: Long,
@@ -90,48 +101,37 @@ class BookingRepository {
         return try {
             validateSchedule(startTime, endTime)
 
+            require(parkingId.isNotBlank()) {
+                "Parking ID is required."
+            }
+
             val parkingSnapshot = firestore
                 .collection("parkings")
                 .document(parkingId)
                 .get()
                 .await()
 
-            val parking = parkingSnapshot.toObject(Parking::class.java)
-                ?: throw Exception("Parking facility not found")
-
-            require(parking.active) {
-                "This parking facility is not active"
+            require(parkingSnapshot.exists()) {
+                "Parking facility not found."
             }
 
-            val bookingsSnapshot = firestore
-                .collection("bookings")
-                .whereEqualTo("parkingId", parkingId)
-                .get()
-                .await()
-
-            // Count reservations that overlap the requested time.
-            val occupiedSlots = bookingsSnapshot.documents.sumOf { document ->
-
-                val booking = document.toObject(Booking::class.java)
-                    ?: return@sumOf 0
-
-                val isActiveBooking =
-                    booking.bookingStatus == "PENDING" ||
-                            booking.bookingStatus == "CONFIRMED"
-
-                val overlaps =
-                    startTime < booking.endTime &&
-                            endTime > booking.startTime
-
-                if (isActiveBooking && overlaps) {
-                    booking.reservedSlots
-                } else {
-                    0
-                }
+            require(parkingSnapshot.getBoolean("active") == true) {
+                "This parking facility is not active."
             }
 
-            val availableSlots =
-                (parking.totalSlots - occupiedSlots).coerceAtLeast(0)
+            require(
+                parkingSnapshot.getString("approvalStatus") == "APPROVED"
+            ) {
+                "This parking facility is not approved."
+            }
+
+            val availableSlots = (
+                    parkingSnapshot.getLong("availableSlots") ?: 0L
+                    ).toInt()
+
+            require(availableSlots >= 0) {
+                "Invalid parking availability."
+            }
 
             Result.success(availableSlots)
 
@@ -140,53 +140,80 @@ class BookingRepository {
         }
     }
 
-    /**
-     * Create a pending booking request.
-     */
+
+    // ==========================================
+    // DRIVER: CREATE BOOKING WITH TRXID
+    // ==========================================
+
     suspend fun createBooking(
         parking: Parking,
         driverId: String,
         startTime: Long,
-        endTime: Long
+        endTime: Long,
+        transactionId: String
     ): Result<Booking> {
+
         return try {
             validateSchedule(startTime, endTime)
 
-            require(parking.id.isNotBlank()) {
-                "Parking ID is required"
+            val currentUserId = requireCurrentUserId()
+
+            require(currentUserId == driverId) {
+                "You are not authorized to create this booking."
             }
 
-            require(driverId.isNotBlank()) {
-                "Driver ID is required"
+            require(parking.id.isNotBlank()) {
+                "Parking ID is required."
             }
 
             require(parking.ownerId.isNotBlank()) {
-                "Parking owner is missing"
+                "Parking owner is missing."
             }
 
             require(parking.pricePerHour > 0.0) {
-                "Invalid parking price"
+                "Invalid parking price."
             }
 
-            // Check available capacity.
-            val availabilityResult = checkAvailability(
+            val cleanTransactionId = transactionId.trim()
+
+            require(cleanTransactionId.length in 6..30) {
+                "Please enter a valid bKash Transaction ID."
+            }
+
+            require(cleanTransactionId.matches(Regex("^[A-Za-z0-9]+$"))) {
+                "Transaction ID can contain only letters and numbers."
+            }
+
+            // Retrieve the driver's own profile.
+            val driverSnapshot = firestore
+                .collection("users")
+                .document(driverId)
+                .get()
+                .await()
+
+            require(driverSnapshot.exists()) {
+                "Driver profile not found."
+            }
+
+            val driverName = driverSnapshot.getString("name").orEmpty()
+            val driverPhone = driverSnapshot.getString("phone").orEmpty()
+
+            // Check availability.
+            val availableSlots = checkAvailability(
                 parkingId = parking.id,
                 startTime = startTime,
                 endTime = endTime
-            )
-
-            val availableSlots = availabilityResult.getOrThrow()
+            ).getOrThrow()
 
             require(availableSlots > 0) {
-                "No parking slots available for this time"
+                "No parking slots are available for this time."
             }
 
-            // Retrieve the owner's bKash number.
-            val ownerPhone = getOwnerPhone(
+            // Retrieve owner's public bKash number.
+            val ownerBkashNumber = getOwnerBkashNumber(
                 parking.ownerId
             ).getOrThrow()
 
-            // Calculate the fee.
             val billableHours = calculateBillableHours(
                 startTime,
                 endTime
@@ -195,35 +222,46 @@ class BookingRepository {
             val totalAmount =
                 billableHours * parking.pricePerHour
 
-            // Create booking document.
-            val document = firestore
+            val bookingRef = firestore
                 .collection("bookings")
                 .document()
 
             val now = System.currentTimeMillis()
 
             val booking = Booking(
-                id = document.id,
+                id = bookingRef.id,
+
                 parkingId = parking.id,
                 parkingName = parking.name,
                 ownerId = parking.ownerId,
                 driverId = driverId,
+
+                driverName = driverName,
+                driverPhone = driverPhone,
+
                 startTime = startTime,
                 endTime = endTime,
+
                 pricePerHour = parking.pricePerHour,
                 durationHours = billableHours,
                 totalAmount = totalAmount,
-                ownerPhone = ownerPhone,
+
+                ownerPhone = "",
+                ownerBkashNumber = ownerBkashNumber,
+
                 paymentMethod = "BKASH",
-                transactionId = "",
-                bookingStatus = "PENDING",
-                paymentStatus = "PENDING",
+                transactionId = cleanTransactionId,
+
+                bookingStatus = "WAITING_FOR_APPROVAL",
+                paymentStatus = "TRXID_SUBMITTED",
+
                 reservedSlots = 1,
+
                 createdAt = now,
                 updatedAt = now
             )
 
-            document.set(booking).await()
+            bookingRef.set(booking).await()
 
             Result.success(booking)
 
@@ -231,44 +269,280 @@ class BookingRepository {
             Result.failure(e)
         }
     }
-    suspend fun cancelBooking(bookingId: String): Result<Unit> {
+
+    // ==========================================
+    // OWNER: GET PENDING PAYMENT REQUESTS
+    // ==========================================
+
+    suspend fun getPendingOwnerBookings(): Result<List<Booking>> {
+
         return try {
-            require(bookingId.isNotBlank()) {
-                "Booking ID is required"
+            val ownerId = requireCurrentUserId()
+
+            val ownerSnapshot = firestore
+                .collection("users")
+                .document(ownerId)
+                .get()
+                .await()
+
+            require(ownerSnapshot.getString("role") == "OWNER") {
+                "Only parking owners can view payment requests."
             }
 
-            val currentUserId = FirebaseAuth.getInstance()
-                .currentUser?.uid
-                ?: throw Exception("Please log in to cancel a booking.")
+            val snapshot = firestore
+                .collection("bookings")
+                .whereEqualTo("ownerId", ownerId)
+                .whereEqualTo("bookingStatus", "WAITING_FOR_APPROVAL")
+                .get()
+                .await()
 
-            val bookingRef = firestore.collection("bookings")
+            val bookings = snapshot.documents.mapNotNull { document ->
+                document.toObject(Booking::class.java)
+                    ?.copy(id = document.id)
+            }.sortedBy { it.createdAt }
+
+            Result.success(bookings)
+
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ==========================================
+    // OWNER: APPROVE PAYMENT
+    // ==========================================
+
+    suspend fun approveBooking(
+        bookingId: String
+    ): Result<Booking> {
+
+        return try {
+            val ownerId = requireCurrentUserId()
+
+            require(bookingId.isNotBlank()) {
+                "Booking ID is required."
+            }
+
+            val ownerSnapshot = firestore
+                .collection("users")
+                .document(ownerId)
+                .get()
+                .await()
+
+            require(ownerSnapshot.getString("role") == "OWNER") {
+                "Only parking owners can approve bookings."
+            }
+
+            val bookingRef = firestore
+                .collection("bookings")
                 .document(bookingId)
 
+            val sessionRef = firestore
+                .collection("parking_sessions")
+                .document()
+
+            val approvedAt = System.currentTimeMillis()
+
+            var approvedBooking: Booking? = null
+
             firestore.runTransaction { transaction ->
+
+                val bookingSnapshot = transaction.get(bookingRef)
+
+                require(bookingSnapshot.exists()) {
+                    "Booking not found."
+                }
+
+                val booking = bookingSnapshot
+                    .toObject(Booking::class.java)
+                    ?: throw Exception("Invalid booking information.")
+
+                require(booking.ownerId == ownerId) {
+                    "You are not authorized to approve this booking."
+                }
+
+                require(
+                    booking.bookingStatus == "WAITING_FOR_APPROVAL"
+                ) {
+                    "This booking is no longer waiting for approval."
+                }
+
+                require(
+                    booking.paymentStatus == "TRXID_SUBMITTED"
+                ) {
+                    "This booking does not have a submitted TrxID."
+                }
+
+                require(booking.transactionId.isNotBlank()) {
+                    "Transaction ID is missing."
+                }
+
+                require(booking.durationHours > 0.0) {
+                    "Invalid booking duration."
+                }
+
+                require(booking.totalAmount > 0.0) {
+                    "Invalid booking amount."
+                }
+
+                val durationMinutes = ceil(
+                    booking.durationHours * 60.0
+                ).toInt()
+
+                val expiresAt =
+                    approvedAt + durationMinutes * 60_000L
+
+                // Prepare the confirmed booking.
+                val updatedBooking = booking.copy(
+                    id = bookingId,
+                    bookingStatus = "CONFIRMED",
+                    paymentStatus = "PAID",
+                    verifiedBy = ownerId,
+                    verifiedAt = approvedAt,
+                    updatedAt = approvedAt,
+                    rejectionReason = "",
+                    sessionId = sessionRef.id,
+                    sessionStartedAt = approvedAt
+                )
+
+                // Create the real parking session.
+                val sessionData = mapOf(
+                    "id" to sessionRef.id,
+                    "bookingId" to bookingId,
+                    "driverId" to booking.driverId,
+                    "ownerId" to ownerId,
+                    "parkingId" to booking.parkingId,
+                    "parkingName" to booking.parkingName,
+
+                    "hourlyRate" to booking.pricePerHour,
+
+                    "status" to "CONFIRMED",
+                    "paymentStatus" to "PAID",
+
+                    "durationMinutes" to durationMinutes,
+
+                    "startedAt" to approvedAt,
+                    "createdAt" to approvedAt,
+                    "paidAt" to approvedAt,
+
+                    "expiresAt" to expiresAt,
+
+                    "totalPaid" to booking.totalAmount,
+                    "extensionCount" to 0
+                )
+
+                // Both writes happen atomically.
+                transaction.update(
+                    bookingRef,
+                    mapOf(
+                        "bookingStatus" to "CONFIRMED",
+                        "paymentStatus" to "PAID",
+                        "verifiedBy" to ownerId,
+                        "verifiedAt" to approvedAt,
+                        "updatedAt" to approvedAt,
+                        "rejectionReason" to "",
+                        "sessionId" to sessionRef.id,
+                        "sessionStartedAt" to approvedAt
+                    )
+                )
+
+                transaction.set(sessionRef, sessionData)
+
+                approvedBooking = updatedBooking
+
+            }.await()
+
+            Result.success(
+                approvedBooking
+                    ?: throw Exception("Booking approval failed.")
+            )
+
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ==========================================
+    // OWNER: REJECT PAYMENT
+    // ==========================================
+
+    suspend fun rejectBooking(
+        bookingId: String,
+        reason: String
+    ): Result<Unit> {
+
+        return try {
+            val ownerId = requireCurrentUserId()
+
+            require(bookingId.isNotBlank()) {
+                "Booking ID is required."
+            }
+
+            val cleanReason = reason.trim()
+
+            require(cleanReason.isNotBlank()) {
+                "Please provide a rejection reason."
+            }
+
+            require(cleanReason.length <= 300) {
+                "Rejection reason cannot exceed 300 characters."
+            }
+
+            val ownerSnapshot = firestore
+                .collection("users")
+                .document(ownerId)
+                .get()
+                .await()
+
+            require(ownerSnapshot.getString("role") == "OWNER") {
+                "Only parking owners can reject bookings."
+            }
+
+            val bookingRef = firestore
+                .collection("bookings")
+                .document(bookingId)
+
+            val rejectedAt = System.currentTimeMillis()
+
+            firestore.runTransaction { transaction ->
+
                 val snapshot = transaction.get(bookingRef)
 
-                if (!snapshot.exists()) {
-                    throw Exception("Booking not found.")
+                require(snapshot.exists()) {
+                    "Booking not found."
                 }
 
-                val driverId = snapshot.getString("driverId")
-                val status = snapshot.getString("bookingStatus")
+                val booking = snapshot.toObject(Booking::class.java)
+                    ?: throw Exception("Invalid booking information.")
 
-                require(driverId == currentUserId) {
-                    "You are not authorized to cancel this booking."
+                require(booking.ownerId == ownerId) {
+                    "You are not authorized to reject this booking."
                 }
 
-                require(status == "PENDING" || status == "CONFIRMED") {
-                    "This booking can no longer be cancelled."
+                require(
+                    booking.bookingStatus == "WAITING_FOR_APPROVAL"
+                ) {
+                    "This booking is no longer waiting for approval."
+                }
+
+                require(
+                    booking.paymentStatus == "TRXID_SUBMITTED"
+                ) {
+                    "This payment cannot be rejected."
                 }
 
                 transaction.update(
                     bookingRef,
                     mapOf(
-                        "bookingStatus" to "CANCELLED",
-                        "updatedAt" to System.currentTimeMillis()
+                        "bookingStatus" to "REJECTED",
+                        "paymentStatus" to "REJECTED",
+                        "verifiedBy" to ownerId,
+                        "verifiedAt" to rejectedAt,
+                        "rejectionReason" to cleanReason,
+                        "updatedAt" to rejectedAt
                     )
                 )
+
             }.await()
 
             Result.success(Unit)
@@ -277,4 +551,146 @@ class BookingRepository {
             Result.failure(e)
         }
     }
+
+    // ==========================================
+    // DRIVER: CANCEL BOOKING
+    // ==========================================
+
+    suspend fun cancelBooking(
+        bookingId: String
+    ): Result<Unit> {
+
+        return try {
+            require(bookingId.isNotBlank()) {
+                "Booking ID is required."
+            }
+
+            val driverId = requireCurrentUserId()
+
+            val bookingRef = firestore
+                .collection("bookings")
+                .document(bookingId)
+
+            firestore.runTransaction { transaction ->
+
+                val snapshot = transaction.get(bookingRef)
+
+                require(snapshot.exists()) {
+                    "Booking not found."
+                }
+
+                val booking = snapshot.toObject(Booking::class.java)
+                    ?: throw Exception("Invalid booking.")
+
+                require(booking.driverId == driverId) {
+                    "You are not authorized to cancel this booking."
+                }
+
+                require(
+                    booking.bookingStatus == "PENDING" ||
+                            booking.bookingStatus == "WAITING_FOR_APPROVAL"
+                ) {
+                    "This booking can no longer be cancelled."
+                }
+
+                transaction.update(
+                    bookingRef,
+                    mapOf(
+                        "bookingStatus" to "CANCELLED",
+                        "paymentStatus" to "CANCELLED",
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                )
+
+            }.await()
+
+            Result.success(Unit)
+
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ==========================================
+// DRIVER: LISTEN TO MY BOOKINGS
+// ==========================================
+
+    fun listenToDriverBookings(
+        driverId: String,
+        onBookingsChanged: (List<Booking>) -> Unit,
+        onError: (Exception) -> Unit
+    ): ListenerRegistration {
+
+        require(driverId.isNotBlank()) {
+            "Driver ID is required."
+        }
+
+        require(auth.currentUser?.uid == driverId) {
+            "You are not authorized to view these bookings."
+        }
+
+        return firestore
+            .collection("bookings")
+            .whereEqualTo("driverId", driverId)
+            .addSnapshotListener { snapshot, error ->
+
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot == null) {
+                    onBookingsChanged(emptyList())
+                    return@addSnapshotListener
+                }
+
+                val bookings = snapshot.documents.mapNotNull { document ->
+                    document.toObject(Booking::class.java)
+                        ?.copy(id = document.id)
+                }.sortedByDescending { it.createdAt }
+
+                onBookingsChanged(bookings)
+            }
+    }
+
+    // ==========================================
+// OWNER: LISTEN TO PENDING PAYMENT REQUESTS
+// ==========================================
+
+    fun listenToOwnerPendingBookings(
+        onBookingsChanged: (List<Booking>) -> Unit,
+        onError: (Exception) -> Unit
+    ): ListenerRegistration {
+
+        val ownerId = requireCurrentUserId()
+
+        return firestore
+            .collection("bookings")
+            .whereEqualTo("ownerId", ownerId)
+            .whereEqualTo("bookingStatus", "WAITING_FOR_APPROVAL")
+            .addSnapshotListener { snapshot, error ->
+
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot == null) {
+                    onBookingsChanged(emptyList())
+                    return@addSnapshotListener
+                }
+
+                val bookings = snapshot.documents
+                    .mapNotNull { document ->
+                        document.toObject(Booking::class.java)
+                            ?.copy(id = document.id)
+                    }
+                    .sortedByDescending { it.createdAt }
+
+                onBookingsChanged(bookings)
+            }
+    }
+
+
+
 }

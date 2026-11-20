@@ -3,12 +3,13 @@ package com.example.smartparking.presentation.driver
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,15 +17,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smartparking.data.model.Booking
 import com.example.smartparking.data.model.Parking
+import com.example.smartparking.data.repository.BookingRepository
+import com.example.smartparking.presentation.common.RequestLocationPermission
 import com.example.smartparking.presentation.driver.components.*
 import com.example.smartparking.presentation.driver.utils.distanceInMeters
 import com.example.smartparking.presentation.driver.utils.formatDistance
@@ -32,12 +36,10 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.gms.maps.model.LatLng
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import androidx.activity.compose.BackHandler
-import com.example.smartparking.data.model.Booking
-import com.example.smartparking.presentation.common.RequestLocationPermission
-import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.foundation.lazy.items
 
 @Composable
 fun DriverHomeScreen(
@@ -49,20 +51,33 @@ fun DriverHomeScreen(
     val parkingViewModel: DriverParkingViewModel = viewModel()
     val uiState by parkingViewModel.uiState.collectAsState()
 
-    var selectedTab by remember { mutableIntStateOf(0) }
-    var previousTab by remember { mutableIntStateOf(0) }
+    val bookingRepository = remember {
+        BookingRepository()
+    }
+
+    val currentDriverId = FirebaseAuth.getInstance()
+        .currentUser?.uid.orEmpty()
+
+    val coroutineScope = rememberCoroutineScope()
+
+    // ------------------------------------------------
+    // NAVIGATION AND SCREEN STATES
+    // ------------------------------------------------
+
+    var selectedTab by remember {
+        mutableIntStateOf(0)
+    }
+
+    var previousTab by remember {
+        mutableIntStateOf(0)
+    }
 
     var selectedParking by remember {
         mutableStateOf<Parking?>(null)
     }
 
-    // Parking selected for scheduled booking
     var bookingParking by remember {
         mutableStateOf<Parking?>(null)
-    }
-
-    var demoBookings by remember {
-        mutableStateOf<List<Booking>>(emptyList())
     }
 
     var activeNavigationParking by remember {
@@ -73,6 +88,59 @@ fun DriverHomeScreen(
         mutableStateOf<Parking?>(null)
     }
 
+    // ------------------------------------------------
+    // DRIVER BOOKINGS
+    // ------------------------------------------------
+
+    var driverBookings by remember {
+        mutableStateOf<List<Booking>>(emptyList())
+    }
+
+    var bookingsError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var isBookingsLoading by remember {
+        mutableStateOf(true)
+    }
+
+    // Listen to the current driver's Firestore bookings.
+    DisposableEffect(currentDriverId) {
+
+        val registration = if (currentDriverId.isNotBlank()) {
+
+            bookingRepository.listenToDriverBookings(
+                driverId = currentDriverId,
+
+                onBookingsChanged = { bookings ->
+                    driverBookings = bookings
+                    bookingsError = null
+                    isBookingsLoading = false
+                },
+
+                onError = { exception ->
+                    bookingsError = exception.localizedMessage
+                        ?: "Unable to load bookings."
+
+                    isBookingsLoading = false
+                }
+            )
+
+        } else {
+            bookingsError = "Please log in to view your bookings."
+            isBookingsLoading = false
+            null
+        }
+
+        onDispose {
+            registration?.remove()
+        }
+    }
+
+    // ------------------------------------------------
+    // SEARCH AND FILTER STATES
+    // ------------------------------------------------
+
     var searchQuery by remember {
         mutableStateOf("")
     }
@@ -80,6 +148,10 @@ fun DriverHomeScreen(
     var selectedCategory by remember {
         mutableStateOf("All")
     }
+
+    // ------------------------------------------------
+    // LOCATION STATES
+    // ------------------------------------------------
 
     var currentLocation by remember {
         mutableStateOf<LatLng?>(null)
@@ -102,27 +174,36 @@ fun DriverHomeScreen(
         LocationServices.getFusedLocationProviderClient(context)
     }
 
-    val coroutineScope = rememberCoroutineScope()
+    // ------------------------------------------------
+    // LOCATION REFRESH
+    // ------------------------------------------------
 
     suspend fun refreshCurrentLocation() {
+
         try {
+
             val location = fusedLocationClient.getCurrentLocation(
                 Priority.PRIORITY_HIGH_ACCURACY,
                 CancellationTokenSource().token
             ).await()
 
             if (location != null) {
+
                 currentLocation = LatLng(
                     location.latitude,
                     location.longitude
                 )
             }
+
         } catch (e: SecurityException) {
+
             hasLocationPermission = false
+
         } catch (e: Exception) {
             // Location could not be retrieved.
         }
     }
+
     RequestLocationPermission { granted ->
         hasLocationPermission = granted
     }
@@ -139,36 +220,34 @@ fun DriverHomeScreen(
             hasLocationPermission = granted
 
             if (granted) {
+
                 pendingNavigationParking?.let { parking ->
+
                     coroutineScope.launch {
+
                         refreshCurrentLocation()
+
                         activeNavigationParking = parking
                         pendingNavigationParking = null
                     }
                 }
+
             } else {
+
                 pendingNavigationParking = null
             }
         }
 
-    // Load parking records
-    LaunchedEffect(Unit) {
-        parkingViewModel.loadParkings()
-    }
-
-    // Refresh location when permission is available
-    LaunchedEffect(hasLocationPermission) {
-        if (hasLocationPermission) {
-            refreshCurrentLocation()
-        }
-    }
-
     val requestLocation: () -> Unit = {
+
         if (hasLocationPermission) {
+
             coroutineScope.launch {
                 refreshCurrentLocation()
             }
+
         } else {
+
             locationPermissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -178,23 +257,41 @@ fun DriverHomeScreen(
         }
     }
 
-    // Search and filter parking spaces
+    // ------------------------------------------------
+    // LOAD PARKING RECORDS
+    // ------------------------------------------------
+
+    LaunchedEffect(Unit) {
+        parkingViewModel.loadParkings()
+    }
+
+    LaunchedEffect(hasLocationPermission) {
+
+        if (hasLocationPermission) {
+            refreshCurrentLocation()
+        }
+    }
+
+    // ------------------------------------------------
+    // SEARCH AND FILTER PARKING SPACES
+    // ------------------------------------------------
+
     val filteredParkings = remember(
         uiState.parkings,
         searchQuery,
         selectedCategory,
         currentLocation
     ) {
+
         val query = searchQuery.trim()
 
         val filtered = uiState.parkings.filter { parking ->
 
-            // Search by parking name or address
-            val matchesSearch = query.isBlank() ||
-                    parking.name.contains(query, ignoreCase = true) ||
-                    parking.address.contains(query, ignoreCase = true)
+            val matchesSearch =
+                query.isBlank() ||
+                        parking.name.contains(query, ignoreCase = true) ||
+                        parking.address.contains(query, ignoreCase = true)
 
-            // Explore parking filters
             val matchesCategory = when (selectedCategory) {
 
                 "Nearby" -> {
@@ -213,53 +310,68 @@ fun DriverHomeScreen(
             matchesSearch && matchesCategory
         }
 
-        // Sort by nearest parking first when location is available
         if (currentLocation != null) {
+
             filtered.sortedBy { parking ->
                 distanceInMeters(parking, currentLocation!!)
             }
+
         } else {
+
             filtered
         }
     }
 
-    // Start in-app navigation
+    // ------------------------------------------------
+    // START IN-APP NAVIGATION
+    // ------------------------------------------------
+
     val startNavigation: (Parking) -> Unit = { parking ->
 
         if (hasLocationPermission) {
+
             coroutineScope.launch {
+
                 refreshCurrentLocation()
                 activeNavigationParking = parking
             }
+
         } else {
+
             pendingNavigationParking = parking
             requestLocation()
         }
     }
 
-    // Handle Android system back gesture
+    // ------------------------------------------------
+    // ANDROID BACK BUTTON
+    // ------------------------------------------------
+
     BackHandler(
         enabled = activeNavigationParking != null ||
                 bookingParking != null ||
                 selectedTab != 0
     ) {
+
         when {
-            // Navigation -> previous screen
+
             activeNavigationParking != null -> {
                 activeNavigationParking = null
             }
 
-            // Booking -> previous screen
             bookingParking != null -> {
                 bookingParking = null
             }
 
-            // Map or another tab -> previous tab
             selectedTab != 0 -> {
                 selectedTab = previousTab
             }
         }
     }
+
+    // ------------------------------------------------
+    // MAIN SCREEN
+    // ------------------------------------------------
 
     Box(
         modifier = Modifier
@@ -267,50 +379,34 @@ fun DriverHomeScreen(
             .background(Color.White)
     ) {
 
-        // ------------------------------------------------
+        // ================================================
         // BOOKING SCREEN
-        // ------------------------------------------------
+        // ================================================
 
         if (bookingParking != null) {
 
             BookingScreen(
                 parking = bookingParking!!,
+                driverId = currentDriverId,
+
                 onBack = {
                     bookingParking = null
                 },
-                onBookingCreated = { demoBooking ->
 
-                    val booking = Booking(
-                        id = demoBooking.id,
-                        parkingId = demoBooking.parkingId,
-                        parkingName = demoBooking.parkingName,
-                        ownerId = bookingParking?.ownerId.orEmpty(),
-                        driverId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty(),
-                        startTime = demoBooking.startTime,
-                        endTime = demoBooking.endTime,
-                        pricePerHour = demoBooking.pricePerHour,
-                        durationHours = demoBooking.durationHours,
-                        totalAmount = demoBooking.totalAmount,
-                        paymentMethod = demoBooking.paymentMethod,
-                        bookingStatus = "CONFIRMED",
-                        paymentStatus = demoBooking.paymentStatus,
-                        createdAt = demoBooking.createdAt,
-                        updatedAt = System.currentTimeMillis()
-                    )
+                onBookingCreated = { _ ->
 
-                    demoBookings = listOf(booking) + demoBookings
+                    // Firestore listener automatically receives
+                    // the newly created booking.
 
                     bookingParking = null
                     selectedTab = 1
                 }
-
             )
-
         }
 
-        // ------------------------------------------------
+        // ================================================
         // NAVIGATION SCREEN
-        // ------------------------------------------------
+        // ================================================
 
         else if (activeNavigationParking != null) {
 
@@ -325,38 +421,46 @@ fun DriverHomeScreen(
                 parkingId = destinationParking.id,
                 hourlyRate = destinationParking.pricePerHour,
                 hasLocationPermission = hasLocationPermission,
+
                 onBack = {
                     activeNavigationParking = null
                 }
             )
-
         }
 
-        // ------------------------------------------------
-        // MAIN DRIVER SCREENS
-        // ------------------------------------------------
+        // ================================================
+        // MAIN DRIVER TABS
+        // ================================================
 
         else {
 
             when (selectedTab) {
 
+                // ============================================
                 // HOME
+                // ============================================
+
                 0 -> {
 
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(Color(0xFFF8FAFC)),
+
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             end = 16.dp,
                             top = 12.dp,
                             bottom = 100.dp
                         ),
+
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
 
+                        // DRIVER HEADER
+
                         item {
+
                             DriverHeader(
                                 onRefresh = {
                                     parkingViewModel.refreshParkings()
@@ -365,8 +469,10 @@ fun DriverHomeScreen(
                             )
                         }
 
-                        // Current location
+                        // CURRENT LOCATION
+
                         item {
+
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -420,8 +526,10 @@ fun DriverHomeScreen(
                             }
                         }
 
-                        // Heading
+                        // HEADING
+
                         item {
+
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
@@ -441,8 +549,10 @@ fun DriverHomeScreen(
                             }
                         }
 
-                        // Search
+                        // SEARCH
+
                         item {
+
                             OutlinedTextField(
                                 value = searchQuery,
                                 onValueChange = {
@@ -467,8 +577,10 @@ fun DriverHomeScreen(
                             )
                         }
 
-                        // Filters
+                        // FILTERS
+
                         item {
+
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
@@ -518,8 +630,10 @@ fun DriverHomeScreen(
                             }
                         }
 
-                        // Parking count
+                        // PARKING COUNT
+
                         item {
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -550,28 +664,32 @@ fun DriverHomeScreen(
                             }
                         }
 
-                        // Loading
+                        // PARKING LOADING
+
                         if (uiState.isLoading) {
 
                             item {
+
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 30.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
+
                                     CircularProgressIndicator(
                                         color = Color(0xFF16A34A)
                                     )
                                 }
                             }
-
                         }
 
-                        // Error
+                        // PARKING ERROR
+
                         else if (uiState.error != null) {
 
                             item {
+
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -608,13 +726,14 @@ fun DriverHomeScreen(
                                     }
                                 }
                             }
-
                         }
 
-                        // Empty state
+                        // EMPTY PARKING STATE
+
                         else if (filteredParkings.isEmpty()) {
 
                             item {
+
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -637,7 +756,8 @@ fun DriverHomeScreen(
 
                                     Text(
                                         text = when {
-                                            selectedCategory == "Nearby" && currentLocation == null ->
+                                            selectedCategory == "Nearby" &&
+                                                    currentLocation == null ->
                                                 "Location required"
 
                                             selectedCategory == "Affordable" ->
@@ -655,7 +775,8 @@ fun DriverHomeScreen(
 
                                     Text(
                                         text = when {
-                                            selectedCategory == "Nearby" && currentLocation == null ->
+                                            selectedCategory == "Nearby" &&
+                                                    currentLocation == null ->
                                                 "Please enable location access to find nearby parking."
 
                                             selectedCategory == "Nearby" ->
@@ -675,7 +796,11 @@ fun DriverHomeScreen(
                                         textAlign = TextAlign.Center
                                     )
 
-                                    if (selectedCategory == "Nearby" && currentLocation == null) {
+                                    if (
+                                        selectedCategory == "Nearby" &&
+                                        currentLocation == null
+                                    ) {
+
                                         Spacer(Modifier.height(8.dp))
 
                                         Button(
@@ -684,6 +809,7 @@ fun DriverHomeScreen(
                                                 containerColor = Color(0xFF16A34A)
                                             )
                                         ) {
+
                                             Icon(
                                                 imageVector = Icons.Default.MyLocation,
                                                 contentDescription = null
@@ -696,10 +822,10 @@ fun DriverHomeScreen(
                                     }
                                 }
                             }
-
                         }
 
-                        // Parking list
+                        // PARKING LIST
+
                         else {
 
                             items(
@@ -716,9 +842,11 @@ fun DriverHomeScreen(
                                 ParkingCard(
                                     parking = parking,
                                     distance = distance,
+
                                     onClick = {
                                         selectedParking = parking
                                     },
+
                                     onNavigate = {
                                         startNavigation(parking)
                                     }
@@ -728,66 +856,149 @@ fun DriverHomeScreen(
                     }
                 }
 
-                // BOOKINGS
+                // ============================================
+                // MY BOOKINGS
+                // ============================================
+
                 1 -> {
-                    MyBookingsScreen(
-                        bookings = demoBookings,
-                        onCancelBooking = { booking ->
 
-                            demoBookings = demoBookings.map { existingBooking ->
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
 
-                                if (existingBooking.id == booking.id) {
-                                    existingBooking.copy(
-                                        bookingStatus = "CANCELLED",
-                                        updatedAt = System.currentTimeMillis()
-                                    )
-                                } else {
-                                    existingBooking
-                                }
+                        if (bookingsError != null) {
+
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                color = Color(0xFFFFEBEE),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+
+                                Text(
+                                    text = bookingsError ?: "",
+                                    color = Color(0xFFB71C1C),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(12.dp)
+                                )
                             }
                         }
-                    )
+
+                        if (isBookingsLoading) {
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                contentAlignment = Alignment.Center
+                            ) {
+
+                                CircularProgressIndicator(
+                                    color = Color(0xFFB8F34A)
+                                )
+                            }
+
+                        } else {
+
+                            MyBookingsScreen(
+                                bookings = driverBookings,
+
+                                onCancelBooking = { booking ->
+
+                                    coroutineScope.launch {
+
+                                        val result = bookingRepository.cancelBooking(
+                                            booking.id
+                                        )
+
+                                        result.onSuccess {
+
+                                            Toast.makeText(
+                                                context,
+                                                "Booking cancelled successfully.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+
+                                            // Firestore listener updates the list.
+                                        }
+
+                                        result.onFailure { exception ->
+
+                                            Toast.makeText(
+                                                context,
+                                                exception.localizedMessage
+                                                    ?: "Unable to cancel booking.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
 
+                // ============================================
                 // MAP
+                // ============================================
+
                 2 -> {
+
                     ParkingMap(
                         parkings = uiState.parkings,
                         currentLocation = currentLocation,
                         hasLocationPermission = hasLocationPermission,
                         onRequestLocation = requestLocation,
+
                         onGoThere = { parking ->
                             startNavigation(parking)
                         }
                     )
                 }
 
+                // ============================================
                 // SAVED
+                // ============================================
+
                 3 -> {
+
                     PlaceholderDriverTab(tab = 3)
                 }
 
-// PROFILE
+                // ============================================
+                // PROFILE
+                // ============================================
+
                 4 -> {
+
                     DriverProfileScreen(
                         onLogout = onLogout
                     )
                 }
 
                 else -> {
+
                     PlaceholderDriverTab(tab = selectedTab)
                 }
             }
 
-            // Bottom navigation
+            // ================================================
+            // FLOATING BOTTOM NAVIGATION
+            // ================================================
+
             FloatingDriverNavigation(
                 selectedTab = selectedTab,
+
                 onSelect = { newTab ->
+
                     if (newTab != selectedTab) {
+
                         previousTab = selectedTab
                         selectedTab = newTab
                     }
                 },
+
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(
@@ -797,9 +1008,9 @@ fun DriverHomeScreen(
             )
         }
 
-        // ------------------------------------------------
+        // ================================================
         // PARKING DETAILS DIALOG
-        // ------------------------------------------------
+        // ================================================
 
         selectedParking?.let { parking ->
 
@@ -818,11 +1029,13 @@ fun DriverHomeScreen(
                 },
 
                 onGoThere = {
+
                     selectedParking = null
                     startNavigation(parking)
                 },
 
                 onBookParking = {
+
                     selectedParking = null
                     bookingParking = parking
                 }

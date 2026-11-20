@@ -16,39 +16,27 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.smartparking.data.model.Booking
 import com.example.smartparking.data.model.Parking
+import com.example.smartparking.data.repository.BookingRepository
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.UUID
 import kotlin.math.ceil
-
-data class DemoParkingBooking(
-    val id: String,
-    val parkingId: String,
-    val parkingName: String,
-    val parkingAddress: String,
-    val startTime: Long,
-    val endTime: Long,
-    val durationHours: Double,
-    val pricePerHour: Double,
-    val totalAmount: Double,
-    val paymentMethod: String,
-    val bookingStatus: String,
-    val paymentStatus: String,
-    val createdAt: Long = System.currentTimeMillis()
-)
 
 private enum class BookingStep {
     SCHEDULE,
     SUMMARY,
-    PAYMENT_METHOD,
-    PAYMENT_CONFIRMATION,
-    SUCCESS
+    PAYMENT,
+    WAITING
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,13 +44,18 @@ private enum class BookingStep {
 fun BookingScreen(
     parking: Parking,
     onBack: () -> Unit,
-    onBookingCreated: (DemoParkingBooking) -> Unit
+    onBookingCreated: (Booking) -> Unit,
+    driverId: String
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val repository = remember { BookingRepository() }
 
     val dateFormat = remember {
         SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault())
     }
+
     val timeFormat = remember {
         SimpleDateFormat("hh:mm a", Locale.getDefault())
     }
@@ -73,12 +66,19 @@ fun BookingScreen(
     var startTime by remember { mutableLongStateOf(0L) }
     var endTime by remember { mutableLongStateOf(0L) }
 
-    var selectedPayment by remember { mutableStateOf("bKash") }
+    var ownerBkashNumber by remember { mutableStateOf("") }
+    var isLoadingBkash by remember { mutableStateOf(true) }
+    var isSubmitting by remember { mutableStateOf(false) }
+
+    var transactionId by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var demoBooking by remember { mutableStateOf<DemoParkingBooking?>(null) }
+    var createdBooking by remember { mutableStateOf<Booking?>(null) }
+    var copiedNumber by remember { mutableStateOf(false) }
 
     val scheduleSelected =
-        selectedDate > 0L && startTime > 0L && endTime > startTime
+        selectedDate > 0L &&
+                startTime > 0L &&
+                endTime > startTime
 
     val billableHours = if (scheduleSelected) {
         ceil((endTime - startTime) / 3_600_000.0)
@@ -87,6 +87,28 @@ fun BookingScreen(
     }
 
     val totalAmount = billableHours * parking.pricePerHour
+
+    // Load the owner's bKash number from owner_payment_profiles.
+
+    LaunchedEffect(parking.ownerId) {
+        isLoadingBkash = true
+        ownerBkashNumber = ""
+        errorMessage = null
+        copiedNumber = false
+
+        try {
+            val result = repository.getOwnerBkashNumber(parking.ownerId)
+
+            ownerBkashNumber = result.getOrThrow()
+
+        } catch (e: Exception) {
+            errorMessage = e.message
+                ?: "Unable to load the owner's bKash number."
+        } finally {
+            isLoadingBkash = false
+        }
+    }
+
 
     fun chooseDate() {
         val calendar = Calendar.getInstance()
@@ -165,10 +187,9 @@ fun BookingScreen(
         when (step) {
             BookingStep.SCHEDULE -> onBack()
             BookingStep.SUMMARY -> step = BookingStep.SCHEDULE
-            BookingStep.PAYMENT_METHOD -> step = BookingStep.SUMMARY
-            BookingStep.PAYMENT_CONFIRMATION -> step = BookingStep.PAYMENT_METHOD
-            BookingStep.SUCCESS -> {
-                demoBooking?.let(onBookingCreated)
+            BookingStep.PAYMENT -> step = BookingStep.SUMMARY
+            BookingStep.WAITING -> {
+                createdBooking?.let(onBookingCreated)
             }
         }
     }
@@ -185,15 +206,14 @@ fun BookingScreen(
                         when (step) {
                             BookingStep.SCHEDULE -> "Book Parking"
                             BookingStep.SUMMARY -> "Booking Summary"
-                            BookingStep.PAYMENT_METHOD -> "Payment Method"
-                            BookingStep.PAYMENT_CONFIRMATION -> "Payment Confirmation"
-                            BookingStep.SUCCESS -> "Booking Successful"
+                            BookingStep.PAYMENT -> "bKash Payment"
+                            BookingStep.WAITING -> "Payment Submitted"
                         }
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = { goBack() }) {
-                        Icon(Icons.Default.ArrowBack, "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -210,15 +230,14 @@ fun BookingScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            if (step != BookingStep.SUCCESS) {
+            if (step != BookingStep.WAITING) {
                 LinearProgressIndicator(
                     progress = {
                         when (step) {
-                            BookingStep.SCHEDULE -> 0.20f
-                            BookingStep.SUMMARY -> 0.40f
-                            BookingStep.PAYMENT_METHOD -> 0.60f
-                            BookingStep.PAYMENT_CONFIRMATION -> 0.80f
-                            BookingStep.SUCCESS -> 1f
+                            BookingStep.SCHEDULE -> 0.33f
+                            BookingStep.SUMMARY -> 0.66f
+                            BookingStep.PAYMENT -> 1f
+                            BookingStep.WAITING -> 1f
                         }
                     },
                     modifier = Modifier
@@ -230,6 +249,10 @@ fun BookingScreen(
             }
 
             when (step) {
+
+                // ---------------------------------
+                // STEP 1: SELECT BOOKING SCHEDULE
+                // ---------------------------------
 
                 BookingStep.SCHEDULE -> {
 
@@ -291,10 +314,7 @@ fun BookingScreen(
                     if (scheduleSelected) {
                         InfoCard {
                             SummaryRow("Duration", "$billableHours billable hours")
-                            SummaryRow(
-                                "Estimated total",
-                                money(totalAmount)
-                            )
+                            SummaryRow("Estimated total", money(totalAmount))
                         }
                     }
 
@@ -304,13 +324,16 @@ fun BookingScreen(
 
                     PrimaryBookingButton(
                         text = "Continue",
-                        enabled = scheduleSelected,
-                        onClick = {
-                            errorMessage = null
-                            step = BookingStep.SUMMARY
-                        }
-                    )
+                        enabled = scheduleSelected
+                    ) {
+                        errorMessage = null
+                        step = BookingStep.SUMMARY
+                    }
                 }
+
+                // ---------------------------------
+                // STEP 2: BOOKING SUMMARY
+                // ---------------------------------
 
                 BookingStep.SUMMARY -> {
 
@@ -326,184 +349,278 @@ fun BookingScreen(
                         SummaryRow("Parking", parking.name)
                         SummaryRow("Address", parking.address)
                         HorizontalDivider()
-                        SummaryRow("Date", dateFormat.format(Date(selectedDate)))
-                        SummaryRow("Start time", timeFormat.format(Date(startTime)))
-                        SummaryRow("End time", timeFormat.format(Date(endTime)))
+
+                        SummaryRow(
+                            "Date",
+                            dateFormat.format(Date(selectedDate))
+                        )
+
+                        SummaryRow(
+                            "Start time",
+                            timeFormat.format(Date(startTime))
+                        )
+
+                        SummaryRow(
+                            "End time",
+                            timeFormat.format(Date(endTime))
+                        )
+
                         HorizontalDivider()
+
                         SummaryRow("Duration", "$billableHours hours")
                         SummaryRow("Hourly rate", money(parking.pricePerHour))
                         HorizontalDivider()
-                        SummaryRow("Total amount", money(totalAmount), true)
+
+                        SummaryRow(
+                            "Total amount",
+                            money(totalAmount),
+                            true
+                        )
                     }
 
                     Text(
-                        "This is a demo booking preview. No parking slot is reserved yet.",
+                        "Your booking request will be sent to the parking owner after you submit your bKash Transaction ID.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall
                     )
 
-                    PrimaryBookingButton("Continue to Payment") {
-                        step = BookingStep.PAYMENT_METHOD
+                    PrimaryBookingButton("Continue to bKash Payment") {
+                        errorMessage = null
+                        step = BookingStep.PAYMENT
                     }
                 }
 
-                BookingStep.PAYMENT_METHOD -> {
+                // ---------------------------------
+                // STEP 3: BKASH PAYMENT
+                // ---------------------------------
+
+                BookingStep.PAYMENT -> {
 
                     Text(
-                        "Select payment method",
+                        "Pay using bKash",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
 
                     InfoCard {
-                        SummaryRow("Booking amount", money(totalAmount), true)
-                    }
-
-                    PaymentOption(
-                        title = "bKash",
-                        subtitle = "Demo mobile payment",
-                        icon = Icons.Default.AccountBalanceWallet,
-                        selected = selectedPayment == "bKash"
-                    ) {
-                        selectedPayment = "bKash"
-                    }
-
-                    PaymentOption(
-                        title = "Nagad",
-                        subtitle = "Demo mobile payment",
-                        icon = Icons.Default.AccountBalanceWallet,
-                        selected = selectedPayment == "Nagad"
-                    ) {
-                        selectedPayment = "Nagad"
-                    }
-
-                    PaymentOption(
-                        title = "Cash",
-                        subtitle = "Pay at the parking location",
-                        icon = Icons.Default.Payments,
-                        selected = selectedPayment == "Cash"
-                    ) {
-                        selectedPayment = "Cash"
-                    }
-
-                    Text(
-                        "Payment is simulated. No real payment will be collected.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-
-                    PrimaryBookingButton("Continue") {
-                        step = BookingStep.PAYMENT_CONFIRMATION
-                    }
-                }
-
-                BookingStep.PAYMENT_CONFIRMATION -> {
-
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = Color(0xFF155EEF),
-                        modifier = Modifier
-                            .size(64.dp)
-                            .align(Alignment.CenterHorizontally)
-                    )
-
-                    Text(
-                        "Confirm your demo payment",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    InfoCard {
-                        SummaryRow("Payment method", selectedPayment)
                         SummaryRow("Parking", parking.name)
-                        SummaryRow("Amount", money(totalAmount), true)
+                        SummaryRow("Amount to pay", money(totalAmount), true)
                     }
 
-                    Text(
-                        if (selectedPayment == "Cash") {
-                            "This demo will record Cash on Arrival as the selected payment method. No cash transaction is being processed."
-                        } else {
-                            "This demo will simulate a successful $selectedPayment payment. No wallet account or real transaction is involved."
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    InfoCard {
 
-                    PrimaryBookingButton("Confirm Demo Booking") {
-                        val booking = DemoParkingBooking(
-                            id = "SPK" + UUID.randomUUID()
-                                .toString()
-                                .replace("-", "")
-                                .take(8)
-                                .uppercase(),
-                            parkingId = parking.id,
-                            parkingName = parking.name,
-                            parkingAddress = parking.address,
-                            startTime = startTime,
-                            endTime = endTime,
-                            durationHours = billableHours,
-                            pricePerHour = parking.pricePerHour,
-                            totalAmount = totalAmount,
-                            paymentMethod = selectedPayment,
-                            bookingStatus = "CONFIRMED_DEMO",
-                            paymentStatus = if (selectedPayment == "Cash") {
-                                "PAY_ON_ARRIVAL"
-                            } else {
-                                "DEMO_PAID"
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.AccountBalanceWallet,
+                                contentDescription = null,
+                                tint = Color(0xFFE2136E),
+                                modifier = Modifier.size(28.dp)
+                            )
+
+                            Spacer(Modifier.width(10.dp))
+
+                            Text(
+                                "Owner's bKash number",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        if (isLoadingBkash) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .align(Alignment.CenterHorizontally)
+                            )
+                        } else if (ownerBkashNumber.isNotBlank()) {
+
+                            Text(
+                                ownerBkashNumber,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFE2136E)
+                            )
+
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(
+                                        AnnotatedString(ownerBkashNumber)
+                                    )
+                                    copiedNumber = true
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    if (copiedNumber) {
+                                        Icons.Default.Check
+                                    } else {
+                                        Icons.Default.ContentCopy
+                                    },
+                                    contentDescription = null
+                                )
+
+                                Spacer(Modifier.width(8.dp))
+
+                                Text(
+                                    if (copiedNumber) "Number copied" else "Copy bKash number"
+                                )
                             }
+                        }
+                    }
+
+                    InfoCard {
+                        Text(
+                            "Payment instructions",
+                            fontWeight = FontWeight.Bold
                         )
 
-                        demoBooking = booking
-                        step = BookingStep.SUCCESS
+                        Text("1. Open your bKash app.")
+                        Text("2. Send ৳${money(totalAmount).removePrefix("৳")} to the owner's number.")
+                        Text("3. Complete the payment.")
+                        Text("4. Copy the Transaction ID (TrxID) from your bKash confirmation.")
+                        Text("5. Enter the TrxID below and submit your request.")
+                    }
+
+                    OutlinedTextField(
+                        value = transactionId,
+                        onValueChange = {
+                            transactionId = it.trim()
+                            errorMessage = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("bKash Transaction ID (TrxID)") },
+                        placeholder = { Text("Enter your TrxID") },
+                        leadingIcon = {
+                            Icon(Icons.Default.ReceiptLong, null)
+                        },
+                        singleLine = true,
+                        enabled = !isSubmitting
+                    )
+
+                    Text(
+                        "The owner will manually verify your TrxID in bKash. Your parking session will begin only after the owner approves the payment.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    errorMessage?.let {
+                        ErrorText(it)
+                    }
+
+                    PrimaryBookingButton(
+                        text = if (isSubmitting) {
+                            "Submitting..."
+                        } else {
+                            "Submit Payment for Approval"
+                        },
+                        enabled = !isSubmitting &&
+                                !isLoadingBkash &&
+                                ownerBkashNumber.isNotBlank() &&
+                                transactionId.isNotBlank() &&
+                                totalAmount > 0.0
+                    ) {
+
+                        val cleanTrxId = transactionId.trim()
+
+                        if (cleanTrxId.isBlank()) {
+                            errorMessage = "Please enter your bKash Transaction ID."
+                            return@PrimaryBookingButton
+                        }
+
+                        scope.launch {
+                            isSubmitting = true
+                            errorMessage = null
+
+                            try {
+                                val driverId = FirebaseAuth
+                                    .getInstance()
+                                    .currentUser
+                                    ?.uid
+                                    ?: throw Exception("Please log in again.")
+
+                                val result = repository.createBooking(
+                                    parking = parking,
+                                    driverId = driverId,
+                                    startTime = startTime,
+                                    endTime = endTime,
+                                    transactionId = cleanTrxId
+                                )
+
+                                createdBooking = result.getOrThrow()
+                                step = BookingStep.WAITING
+
+                            } catch (e: Exception) {
+                                errorMessage = e.message
+                                    ?: "Unable to submit your booking."
+                            } finally {
+                                isSubmitting = false
+                            }
+                        }
                     }
                 }
 
-                BookingStep.SUCCESS -> {
+                // ---------------------------------
+                // STEP 4: WAITING FOR OWNER APPROVAL
+                // ---------------------------------
 
-                    val booking = demoBooking
+                BookingStep.WAITING -> {
 
                     Icon(
-                        imageVector = Icons.Default.CheckCircle,
+                        imageVector = Icons.Default.HourglassTop,
                         contentDescription = null,
-                        tint = Color(0xFF16A34A),
+                        tint = Color(0xFFE69A16),
                         modifier = Modifier
-                            .size(88.dp)
+                            .size(82.dp)
                             .align(Alignment.CenterHorizontally)
                     )
 
                     Text(
-                        "Demo Booking Created!",
+                        "Payment Submitted!",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
 
                     Text(
-                        "Your demo booking is ready. It has not reserved a real parking slot.",
+                        "Your booking request is waiting for the parking owner's approval.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    if (booking != null) {
+                    createdBooking?.let { booking ->
+
                         InfoCard {
                             SummaryRow("Booking ID", booking.id)
                             SummaryRow("Parking", booking.parkingName)
+
                             SummaryRow(
                                 "Date",
                                 dateFormat.format(Date(booking.startTime))
                             )
+
                             SummaryRow(
-                                "Time",
+                                "Scheduled time",
                                 "${timeFormat.format(Date(booking.startTime))} - " +
                                         timeFormat.format(Date(booking.endTime))
                             )
+
                             SummaryRow("Amount", money(booking.totalAmount), true)
-                            SummaryRow("Payment", booking.paymentMethod)
-                            SummaryRow("Payment status", booking.paymentStatus)
+                            SummaryRow("Payment method", "bKash")
+                            SummaryRow("Transaction ID", booking.transactionId)
+                            SummaryRow("Payment status", "Waiting for verification")
+                            SummaryRow("Booking status", "Waiting for approval")
                         }
                     }
 
+                    Text(
+                        "Important: Your parking timer has not started. It will start immediately when the owner approves your payment.",
+                        color = Color(0xFFB7791F),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+
                     PrimaryBookingButton("View My Bookings") {
-                        demoBooking?.let(onBookingCreated)
+                        createdBooking?.let(onBookingCreated)
                     }
                 }
             }
@@ -516,9 +633,7 @@ private fun ParkingBookingCard(parking: Parking) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -530,7 +645,9 @@ private fun ParkingBookingCard(parking: Parking) {
                     null,
                     tint = Color(0xFF155EEF)
                 )
+
                 Spacer(Modifier.width(8.dp))
+
                 Text(
                     parking.name,
                     style = MaterialTheme.typography.titleLarge,
@@ -587,49 +704,13 @@ private fun SummaryRow(
         Text(
             value,
             fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Medium,
-            color = if (emphasize) Color(0xFF155EEF) else MaterialTheme.colorScheme.onSurface,
+            color = if (emphasize) {
+                Color(0xFF155EEF)
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             modifier = Modifier.weight(1f)
         )
-    }
-}
-
-@Composable
-private fun PaymentOption(
-    title: String,
-    subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (selected) Color(0xFF155EEF) else Color(0xFFE2E8F0)
-        ),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) Color(0xFFEFF6FF) else Color.White
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, null, tint = Color(0xFF155EEF))
-            Spacer(Modifier.width(12.dp))
-
-            Column(Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-            }
-
-            RadioButton(
-                selected = selected,
-                onClick = onClick
-            )
-        }
     }
 }
 

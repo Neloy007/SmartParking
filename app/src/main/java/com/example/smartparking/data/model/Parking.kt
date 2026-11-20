@@ -1,3 +1,4 @@
+
 package com.example.smartparking.data.model
 
 data class Parking(
@@ -5,15 +6,25 @@ data class Parking(
     val ownerId: String = "",
     val name: String = "",
     val address: String = "",
+
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
+
     val totalSlots: Int = 0,
     val availableSlots: Int = 0,
+
     val pricePerHour: Double = 0.0,
+
     val active: Boolean = false,
+
     val createdAt: Long = System.currentTimeMillis(),
+
     val approvalStatus: String = "PENDING",
     val approvedAt: Long? = null,
     val approvedBy: String = "",
-    val rejectionReason: String = ""
+    val rejectionReason: String = "",
+
+    // Owner payment information
+    val ownerPhone: String = "",
+    val ownerBkashNumber: String = ""
 )
