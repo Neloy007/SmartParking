@@ -381,4 +381,21 @@ class AdminViewModel(
 
         super.onCleared()
     }
+
+
+    fun approveDriverVerification(driverId: String) {
+        performAction("Driver verification approved successfully.") {
+            repository.approveDriverVerification(driverId)
+        }
+    }
+
+    fun rejectDriverVerification(
+        driverId: String,
+        reason: String
+    ) {
+        performAction("Driver verification rejected.") {
+            repository.rejectDriverVerification(driverId, reason)
+        }
+    }
+
 }

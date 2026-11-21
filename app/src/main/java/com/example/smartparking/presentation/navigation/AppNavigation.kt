@@ -1,48 +1,32 @@
 
 package com.example.smartparking.presentation.navigation
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
-import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.smartparking.presentation.admin.AdminDashboardScreen
 import com.example.smartparking.presentation.auth.LoginScreen
 import com.example.smartparking.presentation.auth.RegisterScreen
 import com.example.smartparking.presentation.driver.DriverHomeScreen
+import com.example.smartparking.presentation.driver.DriverVerificationScreen
+import com.example.smartparking.presentation.owner.OwnerBookingApprovalScreen
+import com.example.smartparking.presentation.owner.OwnerBookingViewModel
 import com.example.smartparking.presentation.owner.OwnerHomeScreen
-import com.example.smartparking.presentation.owner.OwnerParkingRegistrationScreen
+import com.example.smartparking.presentation.owner.OwnerParkingDriversScreen
 import com.example.smartparking.presentation.owner.OwnerParkingEditScreen
+import com.example.smartparking.presentation.owner.OwnerParkingRegistrationScreen
 import com.example.smartparking.presentation.owner.OwnerProfileScreen
 import com.example.smartparking.presentation.splash.SplashScreen
 import com.google.firebase.auth.FirebaseAuth
-import com.example.smartparking.presentation.owner.OwnerBookingApprovalScreen
-import com.example.smartparking.presentation.owner.OwnerBookingViewModel
-
-private val ParkwayBlack = Color(0xFF080808)
-private val ParkwayLime = Color(0xFFB8F34A)
-private val ParkwayWhite = Color(0xFFFFFFFF)
-private val ParkwayGray = Color(0xFF777777)
 
 @Composable
-fun AppNavigation(modifier: Modifier = Modifier) {
+fun AppNavigation(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
 
     val navController = rememberNavController()
 
@@ -74,11 +58,20 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                     FirebaseAuth.getInstance().signOut()
 
                     navController.navigate(Routes.Login.route) {
-                        popUpTo(Routes.AdminDashboard.route) {
+                        popUpTo(0) {
                             inclusive = true
                         }
                         launchSingleTop = true
                     }
+                }
+            )
+        }
+
+        // DRIVER VERIFICATION
+        composable("driver/verification") {
+            DriverVerificationScreen(
+                onBack = {
+                    navController.popBackStack()
                 }
             )
         }
@@ -97,6 +90,9 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                 },
                 onBookingRequests = {
                     navController.navigate("owner/booking-approvals")
+                },
+                onParkingDrivers = {
+                    navController.navigate("owner/parking-drivers")
                 }
             )
         }
@@ -148,7 +144,7 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                     FirebaseAuth.getInstance().signOut()
 
                     navController.navigate(Routes.Login.route) {
-                        popUpTo(Routes.OwnerProfile.route) {
+                        popUpTo(0) {
                             inclusive = true
                         }
                         launchSingleTop = true
@@ -158,11 +154,9 @@ fun AppNavigation(modifier: Modifier = Modifier) {
         }
 
         // OWNER BOOKING APPROVALS
-
         composable("owner/booking-approvals") {
 
             val viewModel: OwnerBookingViewModel = viewModel()
-
             val uiState by viewModel.uiState.collectAsState()
 
             OwnerBookingApprovalScreen(
@@ -188,15 +182,14 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             )
         }
 
-
-        // ADMIN DASHBOARD - DEMO ONLY
+        // ADMIN DASHBOARD
         composable(Routes.AdminDashboard.route) {
             AdminDashboardScreen(
                 onLogout = {
                     FirebaseAuth.getInstance().signOut()
 
                     navController.navigate(Routes.Login.route) {
-                        popUpTo(Routes.AdminDashboard.route) {
+                        popUpTo(0) {
                             inclusive = true
                         }
                         launchSingleTop = true
@@ -205,192 +198,12 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             )
         }
 
-
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AdminDemoDashboardScreen(
-    onLogout: () -> Unit
-) {
-    Scaffold(
-        containerColor = ParkwayWhite,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Parkway Admin",
-                            color = ParkwayBlack,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-
-                        Text(
-                            text = "DEMO ADMIN PANEL",
-                            color = ParkwayGray,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onLogout) {
-                        Icon(
-                            imageVector = Icons.Default.Logout,
-                            contentDescription = "Logout",
-                            tint = ParkwayBlack
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = ParkwayWhite
-                )
-            )
-        }
-    ) { padding ->
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(ParkwayWhite)
-                .padding(22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(Modifier.height(25.dp))
-
-            Icon(
-                imageVector = Icons.Default.AdminPanelSettings,
-                contentDescription = null,
-                tint = ParkwayBlack,
-                modifier = Modifier.size(65.dp)
-            )
-
-            Spacer(Modifier.height(18.dp))
-
-            Text(
-                text = "Welcome, Administrator",
-                color = ParkwayBlack,
-                fontWeight = FontWeight.ExtraBold,
-                style = MaterialTheme.typography.headlineSmall
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            Text(
-                text = "You entered the Parkway Admin demonstration panel.",
-                color = ParkwayGray
-            )
-
-            Spacer(Modifier.height(25.dp))
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = ParkwayLime.copy(alpha = 0.25f)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Text(
-                        text = "DEMO MODE",
-                        color = ParkwayBlack,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-
-                    Spacer(Modifier.height(6.dp))
-
-                    Text(
-                        text = "This screen is not connected to protected administrator data. " +
-                                "The PIN does not authenticate you with Firebase.",
-                        color = ParkwayBlack,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+        // OWNER PARKING DRIVERS
+        composable("owner/parking-drivers") {
+            OwnerParkingDriversScreen(
+                onBack = {
+                    navController.popBackStack()
                 }
-            }
-
-            Spacer(Modifier.height(25.dp))
-
-            Text(
-                text = "Admin modules will be added here:",
-                modifier = Modifier.fillMaxWidth(),
-                color = ParkwayBlack,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            AdminModuleItem("Owner List")
-            AdminModuleItem("Driver List")
-            AdminModuleItem("User Profiles")
-            AdminModuleItem("Facility Approvals")
-            AdminModuleItem("Income & Expenses")
-
-            Spacer(Modifier.weight(1f))
-
-            Button(
-                onClick = onLogout,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = ParkwayBlack
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Logout,
-                    contentDescription = null,
-                    tint = ParkwayLime
-                )
-
-                Spacer(Modifier.width(9.dp))
-
-                Text(
-                    text = "Logout",
-                    color = ParkwayWhite,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AdminModuleItem(
-    title: String
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(12.dp),
-        color = Color(0xFFF4F4F4)
-    ) {
-        Row(
-            modifier = Modifier.padding(15.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.AdminPanelSettings,
-                contentDescription = null,
-                tint = ParkwayBlack
-            )
-
-            Spacer(Modifier.width(12.dp))
-
-            Text(
-                text = title,
-                color = ParkwayBlack,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Spacer(Modifier.weight(1f))
-
-            Text(
-                text = "Coming soon",
-                color = ParkwayGray,
-                style = MaterialTheme.typography.labelSmall
             )
         }
     }

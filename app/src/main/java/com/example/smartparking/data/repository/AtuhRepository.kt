@@ -1,7 +1,10 @@
+
 package com.example.smartparking.data.repository
 
 import com.example.smartparking.data.model.User
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 
@@ -9,6 +12,59 @@ class AuthRepository {
 
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
+
+    // Supports both Firestore Timestamp and Long values.
+    private fun timestampToMillis(value: Any?): Long {
+        return when (value) {
+            is Timestamp -> value.toDate().time
+            is Number -> value.toLong()
+            else -> 0L
+        }
+    }
+
+    // Safely converts Firestore user documents into User objects.
+    private fun mapUserDocument(document: DocumentSnapshot): User {
+
+        return User(
+            uid = document.id,
+
+            name = document.getString("name") ?: "",
+            email = document.getString("email") ?: "",
+            phone = document.getString("phone") ?: "",
+            bkashNumber = document.getString("bkashNumber") ?: "",
+            role = document.getString("role") ?: "",
+            profileImageUrl = document.getString("profileImageUrl") ?: "",
+
+            carNumber = document.getString("carNumber") ?: "",
+            nidNumber = document.getString("nidNumber") ?: "",
+            drivingLicenseNumber = document.getString("drivingLicenseNumber") ?: "",
+
+            verificationStatus = document.getString("verificationStatus")
+                ?: "NOT_SUBMITTED",
+
+            verificationSubmittedAt = timestampToMillis(
+                document.get("verificationSubmittedAt")
+            ),
+
+            verifiedAt = timestampToMillis(
+                document.get("verifiedAt")
+            ),
+
+            rejectionReason = document.getString("rejectionReason") ?: "",
+
+            isVerified = document.getBoolean("isVerified") ?: false,
+
+            drivingLicenseImageUrl = document.getString(
+                "drivingLicenseImageUrl"
+            ) ?: "",
+
+            carImageUrl = document.getString("carImageUrl") ?: "",
+
+            createdAt = timestampToMillis(
+                document.get("createdAt")
+            ).takeIf { it > 0L } ?: System.currentTimeMillis()
+        )
+    }
 
     suspend fun registerUser(
         name: String,
@@ -37,8 +93,7 @@ class AuthRepository {
                 role = role
             )
 
-            firestore
-                .collection("users")
+            firestore.collection("users")
                 .document(firebaseUser.uid)
                 .set(user)
                 .await()
@@ -66,15 +121,18 @@ class AuthRepository {
                     Exception("Login failed")
                 )
 
-            val document = firestore
-                .collection("users")
+            val document = firestore.collection("users")
                 .document(firebaseUser.uid)
                 .get()
                 .await()
 
-            val user = document.toObject(User::class.java)
-                ?: return Result.failure(
-                    Exception("User profile not found"))
+            if (!document.exists()) {
+                return Result.failure(
+                    Exception("User profile not found")
+                )
+            }
+
+            val user = mapUserDocument(document)
 
             Result.success(user)
 
@@ -100,15 +158,18 @@ class AuthRepository {
                     Exception("User not logged in")
                 )
 
-            val document = firestore
-                .collection("users")
+            val document = firestore.collection("users")
                 .document(uid)
                 .get()
                 .await()
 
-            val user = document.toObject(User::class.java)
-                ?: return Result.failure(
-                    Exception("User profile not found"))
+            if (!document.exists()) {
+                return Result.failure(
+                    Exception("User profile not found")
+                )
+            }
+
+            val user = mapUserDocument(document)
 
             Result.success(user)
 

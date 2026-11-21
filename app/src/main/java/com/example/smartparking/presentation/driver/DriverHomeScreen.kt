@@ -68,6 +68,10 @@ fun DriverHomeScreen(
         mutableIntStateOf(0)
     }
 
+    var showVerificationScreen by remember {
+        mutableStateOf(false)
+    }
+
     var previousTab by remember {
         mutableIntStateOf(0)
     }
@@ -352,12 +356,15 @@ fun DriverHomeScreen(
     // ------------------------------------------------
 
     BackHandler(
-        enabled = activeNavigationParking != null ||
+        enabled = showVerificationScreen ||
+                activeNavigationParking != null ||
                 bookingParking != null ||
                 selectedTab != 0
     ) {
-
         when {
+            showVerificationScreen -> {
+                showVerificationScreen = false
+            }
 
             activeNavigationParking != null -> {
                 activeNavigationParking = null
@@ -377,6 +384,7 @@ fun DriverHomeScreen(
     // MAIN SCREEN
     // ------------------------------------------------
 
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -388,6 +396,7 @@ fun DriverHomeScreen(
         // ================================================
 
         if (bookingParking != null) {
+
             BookingScreen(
                 parking = bookingParking!!,
                 driverId = currentDriverId,
@@ -433,6 +442,19 @@ fun DriverHomeScreen(
         }
 
         // ================================================
+        // DRIVER VERIFICATION SCREEN
+        // ================================================
+
+        else if (showVerificationScreen) {
+
+            DriverVerificationScreen(
+                onBack = {
+                    showVerificationScreen = false
+                }
+            )
+        }
+
+        // ================================================
         // MAIN DRIVER TABS
         // ================================================
 
@@ -464,7 +486,6 @@ fun DriverHomeScreen(
                         // DRIVER HEADER
 
                         item {
-
                             DriverHeader(
                                 onRefresh = {
                                     parkingViewModel.refreshParkings()
@@ -923,8 +944,6 @@ fun DriverHomeScreen(
                                                 "Booking cancelled successfully.",
                                                 Toast.LENGTH_SHORT
                                             ).show()
-
-                                            // Firestore listener updates the list.
                                         }
 
                                         result.onFailure { exception ->
@@ -977,7 +996,10 @@ fun DriverHomeScreen(
                 4 -> {
 
                     DriverProfileScreen(
-                        onLogout = onLogout
+                        onLogout = onLogout,
+                        onVerificationClick = {
+                            showVerificationScreen = true
+                        }
                     )
                 }
 
@@ -1046,4 +1068,5 @@ fun DriverHomeScreen(
             )
         }
     }
+
 }

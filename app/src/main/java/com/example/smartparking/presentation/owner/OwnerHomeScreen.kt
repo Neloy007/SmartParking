@@ -26,10 +26,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.runtime.*
+import com.example.smartparking.data.repository.BookingRepository
 import com.example.smartparking.presentation.owner.components.OwnerLogoutButton
 import com.example.smartparking.data.model.Parking
 import androidx.compose.material.icons.filled.AccountCircle
 import com.example.smartparking.presentation.common.RequestLocationPermission
+import com.example.smartparking.presentation.owner.components.OwnerNotificationIcon
+
 // ----------------------------------------------------
 // PARKWAY BRAND COLORS
 // ----------------------------------------------------
@@ -56,10 +60,39 @@ fun OwnerHomeScreen(
     onEditParking: (Parking) -> Unit = {},
     onProfileClick: () -> Unit = {},
     onBookingRequests: () -> Unit = {},
+    onParkingDrivers: () -> Unit = {},
     viewModel: OwnerParkingListViewModel = viewModel()
 ) {
 
     val uiState by viewModel.uiState.collectAsState()
+
+    val bookingRepository = remember {
+        BookingRepository()
+    }
+
+    var pendingRequestCount by remember {
+        mutableIntStateOf(0)
+    }
+
+    DisposableEffect(Unit) {
+
+        val registration = bookingRepository.listenToOwnerPendingBookings(
+            onBookingsChanged = { bookings ->
+                pendingRequestCount = bookings.size
+            },
+            onError = { error ->
+                android.util.Log.e(
+                    "OWNER_NOTIFICATIONS",
+                    "Failed to load booking requests",
+                    error
+                )
+            }
+        )
+
+        onDispose {
+            registration.remove()
+        }
+    }
 
     RequestLocationPermission()
 
@@ -122,17 +155,11 @@ fun OwnerHomeScreen(
 
                 actions = {
 
-                    // BOOKING REQUESTS
-                    IconButton(
+                    // BOOKING REQUESTS WITH NOTIFICATION BADGE
+                    OwnerNotificationIcon(
+                        requestCount = pendingRequestCount,
                         onClick = onBookingRequests
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "Booking Requests",
-                            tint = ParkwayBlack,
-                            modifier = Modifier.size(27.dp)
-                        )
-                    }
+                    )
 
                     // OWNER PROFILE
                     IconButton(
@@ -223,6 +250,60 @@ fun OwnerHomeScreen(
                 color = ParkwayGray,
                 fontSize = 13.sp
             )
+
+            Spacer(Modifier.height(22.dp))
+
+            // PARKING DRIVERS BUTTON
+            Card(
+                onClick = onParkingDrivers,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = ParkwayBlack
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(17.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = null,
+                            tint = ParkwayLime,
+                            modifier = Modifier.size(30.dp)
+                        )
+
+                        Spacer(Modifier.width(12.dp))
+
+                        Column {
+                            Text(
+                                "Parking Drivers",
+                                color = ParkwayWhite,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Text(
+                                "View drivers using your facilities",
+                                color = ParkwayWhite.copy(alpha = 0.7f),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = ParkwayLime
+                    )
+                }
+            }
 
             Spacer(Modifier.height(22.dp))
 

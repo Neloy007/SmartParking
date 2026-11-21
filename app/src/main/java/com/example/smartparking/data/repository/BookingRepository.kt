@@ -8,6 +8,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import kotlin.math.ceil
 import com.google.firebase.firestore.ListenerRegistration
+import com.example.smartparking.data.model.ParkingSession
 
 class BookingRepository {
 
@@ -641,6 +642,8 @@ class BookingRepository {
                     "id" to sessionRef.id,
                     "bookingId" to bookingId,
                     "driverId" to booking.driverId,
+                    "driverName" to booking.driverName,
+                    "driverPhone" to booking.driverPhone,
                     "ownerId" to ownerId,
                     "parkingId" to booking.parkingId,
                     "parkingName" to booking.parkingName,
@@ -921,6 +924,45 @@ class BookingRepository {
                 onBookingsChanged(bookings)
             }
     }
+
+
+
+    // ==========================================
+    // OWNER: LISTEN TO CURRENT PARKING DRIVERS
+    // ==========================================
+
+    fun listenToOwnerParkingSessions(
+        onSessionsChanged: (List<ParkingSession>) -> Unit,
+        onError: (Exception) -> Unit
+    ): ListenerRegistration {
+
+        val ownerId = requireCurrentUserId()
+
+        return firestore
+            .collection("parking_sessions")
+            .whereEqualTo("ownerId", ownerId)
+            .whereEqualTo("status", "CONFIRMED")
+            .addSnapshotListener { snapshot, error ->
+
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot == null) {
+                    onSessionsChanged(emptyList())
+                    return@addSnapshotListener
+                }
+
+                val sessions = snapshot.documents.mapNotNull { document ->
+                    document.toObject(ParkingSession::class.java)
+                        ?.copy(id = document.id)
+                }.sortedByDescending { it.startedAt }
+
+                onSessionsChanged(sessions)
+            }
+    }
+
 
 
 

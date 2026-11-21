@@ -8,6 +8,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
+import com.google.firebase.Timestamp
 
 class AdminRepository {
 
@@ -64,7 +65,6 @@ class AdminRepository {
     fun observeOwners(
         onResult: (Result<List<User>>) -> Unit
     ): ListenerRegistration {
-
         return firestore.collection("users")
             .whereEqualTo("role", OWNER_ROLE)
             .addSnapshotListener { snapshot, error ->
@@ -74,14 +74,17 @@ class AdminRepository {
                     return@addSnapshotListener
                 }
 
-                val owners = snapshot?.documents
-                    ?.mapNotNull { document ->
-                        document.toObject(User::class.java)
-                            ?.copy(uid = document.id)
-                    }
-                    ?: emptyList()
+                try {
+                    val owners = snapshot?.documents
+                        ?.map { document ->
+                            mapUserDocument(document)
+                        } ?: emptyList()
 
-                onResult(Result.success(owners))
+                    onResult(Result.success(owners))
+
+                } catch (e: Exception) {
+                    onResult(Result.failure(e))
+                }
             }
     }
 
@@ -92,7 +95,6 @@ class AdminRepository {
     fun observeDrivers(
         onResult: (Result<List<User>>) -> Unit
     ): ListenerRegistration {
-
         return firestore.collection("users")
             .whereEqualTo("role", DRIVER_ROLE)
             .addSnapshotListener { snapshot, error ->
@@ -102,14 +104,17 @@ class AdminRepository {
                     return@addSnapshotListener
                 }
 
-                val drivers = snapshot?.documents
-                    ?.mapNotNull { document ->
-                        document.toObject(User::class.java)
-                            ?.copy(uid = document.id)
-                    }
-                    ?: emptyList()
+                try {
+                    val drivers = snapshot?.documents
+                        ?.map { document ->
+                            mapUserDocument(document)
+                        } ?: emptyList()
 
-                onResult(Result.success(drivers))
+                    onResult(Result.success(drivers))
+
+                } catch (e: Exception) {
+                    onResult(Result.failure(e))
+                }
             }
     }
 
@@ -427,6 +432,170 @@ class AdminRepository {
         return booking.bookingStatus == COMPLETED &&
                 booking.paymentStatus == PAID
     }
+
+
+
+    suspend fun approveDriverVerification(driverId: String): Result<Unit> {
+        return try {
+            val adminId = requireAdminId()
+
+            require(driverId.isNotBlank()) {
+                "Invalid driver account."
+            }
+
+            val driverRef = firestore.collection("users").document(driverId)
+            val now = System.currentTimeMillis()
+
+            firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(driverRef)
+
+                check(snapshot.exists()) {
+                    "Driver account not found."
+                }
+
+                check(snapshot.getString("role") == DRIVER_ROLE) {
+                    "This account is not a driver."
+                }
+
+                check(snapshot.getString("verificationStatus") == PENDING) {
+                    "This driver's submission is not pending review."
+                }
+
+                val carNumber = snapshot.getString("carNumber").orEmpty()
+                val nidNumber = snapshot.getString("nidNumber").orEmpty()
+                val licenseNumber =
+                    snapshot.getString("drivingLicenseNumber").orEmpty()
+
+                check(
+                    carNumber.isNotBlank() &&
+                            nidNumber.isNotBlank() &&
+                            licenseNumber.isNotBlank()
+                ) {
+                    "The driver has not submitted all required details."
+                }
+
+                transaction.update(
+                    driverRef,
+                    mapOf(
+                        "verificationStatus" to "VERIFIED",
+                        "isVerified" to true,
+                        "verifiedAt" to now,
+                        "verifiedBy" to adminId,
+                        "rejectionReason" to ""
+                    )
+                )
+            }.await()
+
+            Result.success(Unit)
+
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun rejectDriverVerification(
+        driverId: String,
+        reason: String
+    ): Result<Unit> {
+        return try {
+            val adminId = requireAdminId()
+
+            require(driverId.isNotBlank()) {
+                "Invalid driver account."
+            }
+
+            val cleanReason = reason.trim()
+
+            require(cleanReason.isNotBlank()) {
+                "Please provide a rejection reason."
+            }
+
+            val driverRef = firestore.collection("users").document(driverId)
+
+            firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(driverRef)
+
+                check(snapshot.exists()) {
+                    "Driver account not found."
+                }
+
+                check(snapshot.getString("role") == DRIVER_ROLE) {
+                    "This account is not a driver."
+                }
+
+                check(snapshot.getString("verificationStatus") == PENDING) {
+                    "This driver's submission is not pending review."
+                }
+
+                transaction.update(
+                    driverRef,
+                    mapOf(
+                        "verificationStatus" to "REJECTED",
+                        "isVerified" to false,
+                        "verifiedAt" to 0L,
+                        "verifiedBy" to adminId,
+                        "rejectionReason" to cleanReason
+                    )
+                )
+            }.await()
+
+            Result.success(Unit)
+
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun timestampToMillis(value: Any?): Long {
+        return when (value) {
+            is Timestamp -> value.toDate().time
+            is Number -> value.toLong()
+            else -> 0L
+        }
+    }
+
+    private fun mapUserDocument(
+        document: com.google.firebase.firestore.DocumentSnapshot
+    ): User {
+        return User(
+            uid = document.id,
+            name = document.getString("name") ?: "",
+            email = document.getString("email") ?: "",
+            phone = document.getString("phone") ?: "",
+            bkashNumber = document.getString("bkashNumber") ?: "",
+            role = document.getString("role") ?: "",
+            profileImageUrl = document.getString("profileImageUrl") ?: "",
+
+            carNumber = document.getString("carNumber") ?: "",
+            nidNumber = document.getString("nidNumber") ?: "",
+            drivingLicenseNumber = document.getString("drivingLicenseNumber") ?: "",
+
+            verificationStatus = document.getString("verificationStatus")
+                ?: "NOT_SUBMITTED",
+
+            verificationSubmittedAt = timestampToMillis(
+                document.get("verificationSubmittedAt")
+            ),
+
+            verifiedAt = timestampToMillis(
+                document.get("verifiedAt")
+            ),
+
+            rejectionReason = document.getString("rejectionReason") ?: "",
+
+            isVerified = document.getBoolean("isVerified") ?: false,
+            drivingLicenseImageUrl = document.getString("drivingLicenseImageUrl") ?: "",
+            carImageUrl = document.getString("carImageUrl") ?: "",
+
+            createdAt = timestampToMillis(document.get("createdAt"))
+        )
+    }
+
+
 
     // ------------------------------------------------
     // ADMIN DASHBOARD STATISTICS

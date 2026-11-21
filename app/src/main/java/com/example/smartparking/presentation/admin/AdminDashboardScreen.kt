@@ -21,10 +21,10 @@ import com.example.smartparking.data.model.User
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.smartparking.presentation.admin.componets.DriverVerificationCard
 import com.example.smartparking.data.repository.AdminDashboardStats
 import com.example.smartparking.data.repository.AdminParkingSession
 import com.example.smartparking.presentation.admin.componets.DemoParkingPaymentCard
-
 private val ParkwayBlack = Color(0xFF080808)
 private val ParkwayLime = Color(0xFFB8F34A)
 private val ParkwayGray = Color(0xFF777777)
@@ -36,8 +36,8 @@ private val ParkwayOrange = Color(0xFFFFA000)
 
 private enum class AdminTab(val label: String, val symbol: String) {
     OVERVIEW("Overview", "⌂"),
-    OWNERS("Drivers", "♙"),
-    DRIVERS("Owners", "♧"),
+    OWNERS("Owners", "♙"),
+    DRIVERS("Drivers", "♧"),
     APPROVALS("Approvals", "✓"),
     FINANCE("Finance", "৳")
 }
@@ -54,14 +54,20 @@ fun AdminDashboardScreen(
     var rejectingFacility by remember { mutableStateOf<Parking?>(null) }
     var rejectionReason by remember { mutableStateOf("") }
 
+    var rejectingDriver by remember { mutableStateOf<User?>(null) }
+    var driverRejectionReason by remember { mutableStateOf("") }
+
     LaunchedEffect(viewModel) {
         viewModel.startListening()
     }
 
     LaunchedEffect(uiState.successMessage) {
-        if (uiState.successMessage != null && rejectingFacility != null) {
+        if (uiState.successMessage != null) {
             rejectingFacility = null
             rejectionReason = ""
+
+            rejectingDriver = null
+            driverRejectionReason = ""
         }
     }
 
@@ -157,6 +163,7 @@ fun AdminDashboardScreen(
                     )
                 }
 
+
                 AdminTab.OWNERS -> {
                     SectionHeading(
                         title = "Parking Owners",
@@ -170,9 +177,9 @@ fun AdminDashboardScreen(
                     )
 
                     val filteredOwners = uiState.owners.filter { owner ->
-                        owner.name.contains(searchQuery, true) ||
-                                owner.email.contains(searchQuery, true) ||
-                                owner.phone.contains(searchQuery, true)
+                        owner.name.contains(searchQuery, ignoreCase = true) ||
+                                owner.email.contains(searchQuery, ignoreCase = true) ||
+                                owner.phone.contains(searchQuery, ignoreCase = true)
                     }
 
                     if (filteredOwners.isEmpty()) {
@@ -192,10 +199,11 @@ fun AdminDashboardScreen(
                     }
                 }
 
+
                 AdminTab.DRIVERS -> {
                     SectionHeading(
-                        title = "Registered Drivers",
-                        subtitle = "${uiState.drivers.size} registered driver accounts"
+                        title = "Driver Management",
+                        subtitle = "Manage registered drivers and identity verification"
                     )
 
                     SearchField(
@@ -204,15 +212,54 @@ fun AdminDashboardScreen(
                         placeholder = "Search drivers..."
                     )
 
+                    // Filter all registered drivers first
                     val filteredDrivers = uiState.drivers.filter { driver ->
-                        driver.name.contains(searchQuery, true) ||
-                                driver.email.contains(searchQuery, true) ||
-                                driver.phone.contains(searchQuery, true) ||
-                                driver.carNumber.contains(searchQuery, true)
+                        driver.name.contains(searchQuery, ignoreCase = true) ||
+                                driver.email.contains(searchQuery, ignoreCase = true) ||
+                                driver.phone.contains(searchQuery, ignoreCase = true) ||
+                                driver.carNumber.contains(searchQuery, ignoreCase = true)
                     }
 
+                    // Filter pending verification submissions
+                    val pendingVerifications = filteredDrivers.filter { driver ->
+                        driver.verificationStatus == "PENDING"
+                    }
+
+                    // Driver verification section
+                    SectionHeading(
+                        title = "Driver Verification",
+                        subtitle = "${pendingVerifications.size} drivers waiting for identity review"
+                    )
+
+                    if (pendingVerifications.isEmpty()) {
+                        EmptyState("No pending driver verifications.")
+                    } else {
+                        pendingVerifications.forEach { driver ->
+                            DriverVerificationCard(
+                                driver = driver,
+                                isLoading = uiState.isActionLoading,
+                                onApprove = {
+                                    viewModel.approveDriverVerification(driver.uid)
+                                },
+                                onReject = {
+                                    viewModel.clearMessages()
+                                    rejectingDriver = driver
+                                    driverRejectionReason = ""
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // All registered drivers
+                    SectionHeading(
+                        title = "All Registered Drivers",
+                        subtitle = "${filteredDrivers.size} matching driver accounts"
+                    )
+
                     if (filteredDrivers.isEmpty()) {
-                        EmptyState("No matching drivers found.")
+                        EmptyState("No registered drivers found.")
                     } else {
                         filteredDrivers.forEach { driver ->
                             DriverCard(
@@ -372,6 +419,77 @@ fun AdminDashboardScreen(
             }
         )
     }
+
+
+    rejectingDriver?.let { driver ->
+        AlertDialog(
+            onDismissRequest = {
+                if (!uiState.isActionLoading) {
+                    rejectingDriver = null
+                    driverRejectionReason = ""
+                }
+            },
+            title = {
+                Text(
+                    "Reject driver verification",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        "Provide a reason for rejecting ${driver.name}'s verification.",
+                        color = ParkwayGray,
+                        fontSize = 13.sp
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = driverRejectionReason,
+                        onValueChange = {
+                            driverRejectionReason = it
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text("Enter rejection reason")
+                        },
+                        minLines = 3,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = driverRejectionReason.isNotBlank() &&
+                            !uiState.isActionLoading,
+                    onClick = {
+                        viewModel.rejectDriverVerification(
+                            driver.uid,
+                            driverRejectionReason.trim()
+                        )
+                    }
+                ) {
+                    Text(
+                        "Reject driver",
+                        color = ParkwayRed
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !uiState.isActionLoading,
+                    onClick = {
+                        rejectingDriver = null
+                        driverRejectionReason = ""
+                    }
+                ) {
+                    Text("Cancel", color = ParkwayGray)
+                }
+            }
+        )
+    }
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -811,7 +929,9 @@ private fun DriverCard(
             )
             DetailLine(
                 "Verification",
-                if (driver.isVerified) "Verified" else "Not verified"
+                driver.verificationStatus
+                    .ifBlank { "NOT_SUBMITTED" }
+                    .replace("_", " ")
             )
         }
     }
